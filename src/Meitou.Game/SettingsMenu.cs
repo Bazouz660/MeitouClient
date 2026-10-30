@@ -242,7 +242,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                 + "Takes effect after a restart. Now: " + (FrameGenerationStatus?.Invoke() ?? "off"),
                 Toggle: new("Frame generation (FSR 3)", () => config.FrameGeneration, v => config.FrameGeneration = v, OnOff: true)));
         if (page == 0)
-            result.Insert(page == 0 && !OperatingSystem.IsMacOS() ? 4 : 3, new("World tick alongside drawing", "Faithful runs the world, then draws it, as the game does. Meitou runs the next world tick while the frame is drawn "
+            result.Insert(OperatingSystem.IsMacOS() ? 3 : 4, new("World tick alongside drawing", "Faithful runs the world, then draws it, as the game does. Meitou runs the next world tick while the frame is drawn "
                 + "whenever the world is busy (big fights, crowds), Always on every frame: much higher frame rates with many characters. "
                 + "Running alongside can add up to 33 ms of input delay (one world tick).",
                 Choice: new(() => ["Faithful (in series)", "Meitou (when busy)", "Always on"], () => (int)config.TickAhead, i => config.TickAhead = (TickAheadMode)i)));

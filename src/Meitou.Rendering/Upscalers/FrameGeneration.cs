@@ -288,6 +288,7 @@ public sealed unsafe class FrameGeneration : IDisposable
             FrameGenerationCallback = (nint)(delegate* unmanaged<void*, void*, uint>)&OnGenerate,
             FrameGenerationCallbackUserContext = (nint)contextSlot,
             FrameGenerationEnabled = (byte)(enabled ? 1 : 0),
+            // GenerationRect left zero: the whole display (the SDK's provider fills it in when width and height are 0).
             FrameId = id,
         };
         return configure(contextSlot, &d) == 0;

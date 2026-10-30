@@ -61,6 +61,8 @@ public sealed unsafe class FfxSwapchain : IDisposable
     static VulkanDevice? submitDevice;
     static Queue gameQueue, computeQueue, presentQueue, acquireQueue;
     static readonly object ComputeLock = new(), PresentLock = new(), AcquireLock = new();
+    // Guards submitDevice: one layer at a time.
+    static readonly object LayerLock = new();
 
     /// <summary>True when the library exists and loads (<c>MEITOU_FFX_PATH</c> or next to the executable, as for FSR upscaling), else false with the reason.</summary>
     public static bool LibraryLoads(out nint library, out string? reason)
@@ -99,7 +101,7 @@ public sealed unsafe class FfxSwapchain : IDisposable
             reason = $"the graphics queue family offers {device.ExtraQueues.Length + 1} queues, the layer needs {MinimumExtraQueues + 1}";
             return null;
         }
-        lock (typeof(FfxSwapchain))
+        lock (LayerLock)
         {
             if (submitDevice is not null) { reason = "a swapchain layer already exists"; return null; }
             submitDevice = device;
@@ -222,7 +224,7 @@ public sealed unsafe class FfxSwapchain : IDisposable
             destroyContext(&c, null);
             context = 0;
         }
-        lock (typeof(FfxSwapchain)) { if (submitDevice == device) submitDevice = null; }
+        lock (LayerLock) { if (submitDevice == device) submitDevice = null; }
         NativeMemory.Free(desc);
         NativeMemory.Free(swapchainSlot);
     }
