@@ -419,7 +419,7 @@ public sealed unsafe class DebrisRenderer : IDisposable
             if (find(name) is { } path)
                 texture = new DebrisTexture(gpu, path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
                     ? SampledImage.Rgba8(gpu, TextureLoader.LoadFile(path, false).Levels[0], repeat: true, mipmaps: true, "debris " + name)
-                    : SampledImage.FromDds(gpu, DdsReader.ReadFile(path), repeat: true, "debris " + name));
+                    : SampledImage.FromDds(gpu, DdsReader.ReadFile(path), repeat: true, "debris " + name, bc3Blocks: true));
         }
         catch (Exception e) when (e is IOException or InvalidDataException or NotSupportedException)
         {

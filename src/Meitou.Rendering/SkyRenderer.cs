@@ -1300,16 +1300,24 @@ internal sealed class SampledImage : IDisposable
     /// <summary>
     /// A 2D DDS file with every level it has: BC1 blocks as they are (half a byte a texel), any other format decoded to RGBA8; trilinear,
     /// repeating or clamped to the edge. The sky's starfield and planet maps (4096² and 4096 × 2048 BC1: 11 and 6 MB instead of 85 and 43 MB as RGBA8).
+    /// <paramref name="bc3Blocks"/>: BC2 and BC3 as blocks too, which the GPU decodes to the same channels (the debris' limb and item maps: decoding them on the
+    /// render thread held the first frame of a town's loading screen 0.3 s).
     /// </summary>
-    public static SampledImage FromDds(IGpuContext ctx, Meitou.Data.Textures.DdsFile dds, bool repeat, string name)
+    public static SampledImage FromDds(IGpuContext ctx, Meitou.Data.Textures.DdsFile dds, bool repeat, string name, bool bc3Blocks = false)
     {
-        bool bc1 = dds.Format == Meitou.Data.Textures.DdsFormat.Bc1;
-        var format = bc1 ? InternalFormat.CompressedRgbaS3TCDxt1Ext : InternalFormat.Rgba8;
+        var format = dds.Format switch
+        {
+            Meitou.Data.Textures.DdsFormat.Bc1 => InternalFormat.CompressedRgbaS3TCDxt1Ext,
+            Meitou.Data.Textures.DdsFormat.Bc2 when bc3Blocks => InternalFormat.CompressedRgbaS3TCDxt3Ext,
+            Meitou.Data.Textures.DdsFormat.Bc3 when bc3Blocks => InternalFormat.CompressedRgbaS3TCDxt5Ext,
+            _ => InternalFormat.Rgba8,
+        };
+        bool blocks = format != InternalFormat.Rgba8;
         using var batch = ctx.Uploads.Begin();
         var t = batch.Create(new TextureDesc(format, dds.Width, dds.Height, dds.MipCount, Name: name));
         for (int level = 0; level < dds.MipCount; level++)
         {
-            if (bc1)
+            if (blocks)
             {
                 var s = dds.Surface(0, level);
                 batch.Write(t, level, 0, Rect(s.Width, s.Height), dds.Data.AsSpan(s.Offset, s.Length));
