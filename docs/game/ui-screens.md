@@ -1203,6 +1203,13 @@ unless marked; Meitou: `PlayerInterface.Squads.cs`, commands in `SquadManagement
     - **Unknown**: the labels and rules of the dexterity, defence, perception and ranged bonus rows; grade cut-offs for other qualities; the light, medium and cloth
       tables were read from the exe but not compared in game; the grade line at level 100. Meitou: armour crafted here gets no crafter name; combat
       (`CharacterAssembly.MakeFighter`) and trade prices (`Market`) still read armour's `quality`, not its `level`. Weapons, food and tools have no stat lines yet.
+  - **Crossbow** (`FUN_1407b0750`, the Crossbow item's first tooltip function; **Verified** rows, labels and number formats in the decompile; units read from the exe's constants: `s`, `m`, `m/s`, `x`):
+    grade (shared code), `Buyback`, `Stolen`, then `Crossbow class` (Main) and rows with a hyphen label (Ink) and a Main value: `Damage:` `min-max` (ints, the gun's pierce ends after the
+    quality lerp, `bow damage 1/99` and the global damage multiplier), `Accuracy deviation:` `{p=2} degrees`, `Reload time:` `min-maxs` (2 decimals), `Range:` range × 0.1 as `Nm`
+    (0 decimals), `Velocity:` shot speed × 0.23 as `Nm/s`, `Blood loss:` `{p=2}x` (the item's bleed multiplier), `Required skill:` the `accuracy perfect skill` int; a 15-dash rule (Grey);
+    `Ammunition type:` the ammo item's name, `???` with none; `Damage vs robots / humans / animals` and `Damage vs <race>` (signed percent rows as the weapon's, `FUN_14079f650`);
+    a 16-dash rule; `Weight` whole kg truncated; then the shared prices (`FUN_14079e7a0`). Meitou builds all of it from the gun at the item's level × 0.01
+    (**Observed**: the original reads the item's own gun; its quality input is not traced, Meitou's simulation uses the level too); `race damage` rows have no crossbow field in Meitou.
 - **Fencing prompt** (**Observed**, `FUN_140712920`), shown for a stolen item over the trader: stolen from the trader's own faction, `Fencing chance:` and `N%` (`FUN_140793490`) in Bad;
   else (another faction, or an owner that does not resolve), when the trader's squad does not fence it (it buys stolen goods and the owner is not of that squad, [economy](economy.md#fencing-stealing-and-smuggling)),
   `Stolen goods?` / `No problem!` in Good; otherwise `Fencing chance:` too (the branch falls through, **Verified** in the decompile). Meitou (`TradeSystem.Publish`, `TradeItemView.FenceChance`): `Fencing chance:` for every stolen

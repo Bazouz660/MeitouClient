@@ -24,6 +24,8 @@ sealed partial class PlayerInterface
     public Func<string, string>? SpecialFoodRaces { get; set; }
     /// <summary>The combat tables (weapon and armour records); the host sets it.</summary>
     public Func<CombatDatabase?>? CombatOf { get; set; }
+    /// <summary>The game's global damage multiplier (scales a crossbow's damage on its tooltip); the host sets it. Null: 1.</summary>
+    public Func<float>? RangedDamageMultiplier { get; set; }
 
     /// <summary>The control property that makes an item cell show an item tooltip: the key of its <see cref="ItemTip"/>.</summary>
     const string ItemTipKey = "tooltip_item";
@@ -614,7 +616,36 @@ sealed partial class PlayerInterface
             lines.Add(new("-Shots", $"{(int)t.Charges}/{(int)t.MaxCharges}", TooltipTone.Main, TooltipTone.Main));
         }
         string weightText;
-        if (type == Meitou.Data.Fcs.FcsRecordType.WEAPON && combat?.Weapon(t.Record) is { } weapon)
+        string Fixed2(float v) => v.ToString("0.00", CultureInfo.InvariantCulture);
+        // Signed percent rows (FUN_14079f650): (int) of the value truncated, none at 0, +N% Good or N% Bad.
+        void Signed(string label, float value)
+        {
+            int n = (int)value;
+            if (n != 0) lines.Add(Row(label, (n > 0 ? "+" : "") + n.ToString(CultureInfo.InvariantCulture) + "%", n > 0 ? TooltipTone.Good : TooltipTone.Bad));
+        }
+        if (type == Meitou.Data.Fcs.FcsRecordType.CROSSBOW && combat?.Crossbow(t.Record) is { } bow)
+        {
+            // A crossbow's own rows (FUN_1407b0750, Observed): the gun's numbers at the item's level x 0.01 (CrossbowData.At), the weight whole kg truncated.
+            var gun = CrossbowInstance.Create(t.Level * 0.01f, bow, combat.Constants, RangedDamageMultiplier?.Invoke() ?? 1).Stats;
+            string I(float v) => ((int)v).ToString(CultureInfo.InvariantCulture);
+            lines.Add(new("Crossbow class", "", TooltipTone.Main));
+            lines.Add(Row("Damage:", I(gun.PierceMin) + "-" + I(gun.PierceMax), TooltipTone.Main));
+            lines.Add(Row("Accuracy deviation:", Fixed2(gun.AccuracyDeviation) + " degrees", TooltipTone.Main));
+            lines.Add(Row("Reload time:", Fixed2(gun.ReloadMin) + "-" + Fixed2(gun.ReloadMax) + "s", TooltipTone.Main));
+            lines.Add(Row("Range:", I(gun.Range * 0.1f) + "m", TooltipTone.Main));
+            lines.Add(Row("Velocity:", I(gun.ShotSpeed * 0.23f) + "m/s", TooltipTone.Main));
+            lines.Add(Row("Blood loss:", Fixed2(bow.BleedMult) + "x", TooltipTone.Main));
+            lines.Add(Row("Required skill:", bow.AccuracyPerfectSkill.ToString(CultureInfo.InvariantCulture), TooltipTone.Main));
+            lines.Add(new("---------------", "", TooltipTone.Grey));
+            lines.Add(Row("Ammunition type:", bow.AmmoId.Length > 0 && RecordName?.Invoke(bow.AmmoId) is { Length: > 0 } ammo ? ammo : "???", TooltipTone.Main));
+            Signed("Damage vs robots", (bow.RobotDamageMult - 1) * 100);
+            Signed("Damage vs humans", (bow.HumanDamageMult - 1) * 100);
+            Signed("Damage vs animals", (bow.AnimalDamageMult - 1) * 100);
+            lines.Add(new("----------------", "", TooltipTone.Grey));
+            weightText = I(unitWeight) + " kg";
+            lines.Add(Row("Weight", weightText));
+        }
+        else if (type == Meitou.Data.Fcs.FcsRecordType.WEAPON && combat?.Weapon(t.Record) is { } weapon)
         {
             var maker = combat.Manufacturer(t.Company) ?? WeaponManufacturer.Neutral;
             var stats = WeaponStats.Compute(t.Level * 0.01f, weapon, maker, combat.WeaponMaterial(t.Material) ?? WeaponMaterial.None, combat.Constants);
@@ -625,16 +656,9 @@ sealed partial class PlayerInterface
                 (int)WeaponCategory.Polearms => "Polearm class", _ => null,
             };
             if (className is not null) lines.Add(new(className, "", TooltipTone.Main));
-            string Fixed2(float v) => v.ToString("0.00", CultureInfo.InvariantCulture);
             lines.Add(Row("Cutting damage", Fixed2(stats.CutMultiplier), TooltipTone.Main));
             lines.Add(Row("Blunt damage", Fixed2(stats.BluntMultiplier), TooltipTone.Main));
             lines.Add(Row("Blood loss", Fixed2(weapon.BleedMult), TooltipTone.Main));
-            // Signed percent rows (FUN_14079f650): (int) of the value truncated, none at 0, +N% Good or N% Bad.
-            void Signed(string label, float value)
-            {
-                int n = (int)value;
-                if (n != 0) lines.Add(Row(label, (n > 0 ? "+" : "") + n.ToString(CultureInfo.InvariantCulture) + "%", n > 0 ? TooltipTone.Good : TooltipTone.Bad));
-            }
             Signed("Armour penetration", weapon.ArmourPenetration * 100);
             Signed("Damage vs robots", (weapon.RobotDamageMult - 1) * 100);
             Signed("Damage vs humans", (weapon.HumanDamageMult - 1) * 100);
