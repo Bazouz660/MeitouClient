@@ -358,6 +358,39 @@ public class AggroTests
         Assert.True(a.Combat.StateOf(fighter).TargetSlot < 0);
     }
 
+    /// <summary>
+    /// Two of the player's squad fight a group, a third stands apart and one of the group attacks it: the lone one keeps fighting its own attacker through every re-pick
+    /// (docs/game/combat.md "Target selection": the chooser's lists are its own attackers and threats, and a bodyguard's protectee's attackers, never a squad mate's).
+    /// </summary>
+    [Fact]
+    public void A_lone_fighter_keeps_its_own_attacker_while_its_mates_fight_a_group()
+    {
+        using var a = Make(7, 1);
+        var o = new Vector2(2000, 2000);
+        var mine = a.SquadOf(Player, o, true, (o, 0f), (o + new Vector2(0, 25), 0f), (o + new Vector2(0, 150), 0f));
+        var raiders = a.SquadOf(Raiders, o, true, (o + new Vector2(25, 0), 0f), (o + new Vector2(25, 25), 0f), (o + new Vector2(30, -10), 0f), (o + new Vector2(30, 35), 0f),
+            (o + new Vector2(40, 150), 0f));
+        var table = a.World.Characters;
+        foreach (var m in mine.Members) table.Cold(m.Slot)!.IsPlayer = true;
+        CharacterId pa = mine.Members[0], pb = mine.Members[1], lone = mine.Members[2], foe = raiders.Members[4];
+        long t = a.World.Tick;
+        a.World.Commands.Enqueue(new AttackOrder([raiders.Members[0], raiders.Members[2]], pa) { Tick = t });
+        a.World.Commands.Enqueue(new AttackOrder([raiders.Members[1], raiders.Members[3]], pb) { Tick = t });
+        a.World.Commands.Enqueue(new AttackOrder([foe], lone) { Tick = t });
+        a.World.Commands.Enqueue(new AttackOrder([pa], raiders.Members[0]) { Tick = t, Defensive = true });
+        a.World.Commands.Enqueue(new AttackOrder([pb], raiders.Members[1]) { Tick = t, Defensive = true });
+        a.World.Commands.Enqueue(new AttackOrder([lone], foe) { Tick = t, Defensive = true });
+        int checkedTicks = 0;
+        for (int k = 0; k < 300; k++)
+        {
+            a.World.RunTicks(1);
+            if (table.Cold(foe.Slot)!.Medical!.Incapacitated || table.Cold(lone.Slot)!.Medical!.Incapacitated) break;
+            Assert.Equal(foe.Slot, a.Combat.StateOf(lone).TargetSlot);
+            checkedTicks++;
+        }
+        Assert.True(checkedTicks * a.World.TickSeconds > 3 * CombatSystem.PickSeconds, $"only {checkedTicks} ticks checked");
+    }
+
     /// <summary>The crossroads with a player character among the raiders who then assaults a villager; pinned in <see cref="GoldenHashTests"/>.</summary>
     internal static List<ulong> Hashes(int threads)
     {

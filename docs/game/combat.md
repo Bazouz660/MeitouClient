@@ -267,8 +267,11 @@ path-facing branches set the heading at once (before, `Turn` at 4π rad/s, which
   [lifecycle](#fight-lifecycle-and-orders)) is returned without scoring, unless its path is in the task system's impossible list
   (`AITaskSytem::isPathImpossible`) or refocus mode (+0x2e8) is set. Meitou's sense test on the current target (`CombatSystem.CurrentSensed`): sensed now or within its entry's
   lifetime (`SenseLife`, [Leaving a fight](#leaving-a-fight): 30 / 60 / 120 units of 2 s), for NPCs and the player's characters alike. Otherwise three lists are scored: the attackers (engaged list +0x1f8) of
-  the current AI task's target when the chooser is aware of it, the chooser's own attackers, and its threats (SensoryData +0x50). A candidate
-  must not be crippled (vfunc 0x360) and must be sensed by the chooser or by the task's target. The best score over the lists wins; none →
+  the AI task's target when the chooser senses it (any entry), the chooser's own attackers, and its threats (SensoryData +0x50). The AI task's target is `AITaskSytem` +0x10, which the
+  chooser's end (`FUN_14050ca70`, from `chooseGoal` `FUN_140510ef0`, **Verified**) sets to the chosen goal's target only for goals 45 Bodyguard, 17 Protection, 87, 152 and 124 (operating
+  machinery or storage), and clears otherwise: a self-defender (32) or a joiner (15, 143) has none, so only a bodyguard scores its protectee's attackers, and only it gets the +10 term below. A
+  candidate must not be crippled (vfunc 0x360) and must be sensed by the chooser or by the task's target (`FUN_140855960` flag 0: an entry, the character itself, or its conversation partner).
+  Each list is scored on its own (`FUN_14059e300`) and the best over the lists wins when above -100 (`DAT_1416abef4`, **Verified**); none →
   the sensed-enemy finder `FUN_14059fa70` when the task system's aggro mode (OrdersReceiver +0x30, KenshiLib `AggroType`, 0 aggressive by
   the constructor; no other writer traced) is 0, else no target. The finder (**Verified** decompile) walks the SENSE_ENEMY entries (mask 4, 0x208) that are seen or
   heard now (entry +0x38 / +0x39), not left alone (`FUN_1408569a0`), passing the Hold post test `FUN_140598630` and the area test `FUN_140599f30`
