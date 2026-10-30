@@ -25,7 +25,7 @@ public sealed record FrameGenInputs
 /// (depth and motion), <see cref="Finish"/> before the present (the interface picture, the configuration). The interpolation itself runs inside the
 /// layer's present, through the dispatch callback registered in the configuration.
 /// <para>
-/// Conventions (docs/research/fsr3-framegen-step5-dispatch-2026-10-28.md): the picture handed to the present is the world alone, top-down (the
+/// Conventions (docs/render-post.md, "Frame generation"): the picture handed to the present is the world alone, top-down (the
 /// backbuffer flipped by the present blit); the interface is a separate premultiplied RGBA8 picture, top-down, laid over every presented frame by the layer.
 /// Depth and motion are bottom-up in the post chain, so each is copied flipped into a target of its own (a blit, only while frame generation is on) and the
 /// motion's y scale changes sign: x -renderWidth, y +renderHeight (the upscalers' scale is -renderWidth, -renderHeight in the bottom-up layout), the jitter's y is negated.
@@ -314,7 +314,7 @@ public sealed unsafe class FrameGeneration : IDisposable
             registered = Input(ctx, flipped);
         }
         else resetNext = true;   // the next frame after frames without it starts afresh
-        if (!ConfigureFrame(Enabled, id)) { Console.WriteLine("frame generation  configure failed; off for the rest of the run"); failed = Enabled = false; }
+        if (!ConfigureFrame(Enabled, id)) { Console.WriteLine("frame generation  configure failed; off for the rest of the run"); failed = true; Enabled = false; }
         if ((registered is not null || uiRegistered) && !layerGone)
         {
             if (!layer.RegisterUi(Enabled ? registered : null)) { Console.WriteLine("frame generation  registering the interface picture failed; off for the rest of the run"); failed = true; Enabled = false; }
