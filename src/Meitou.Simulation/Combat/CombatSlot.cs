@@ -34,6 +34,8 @@ public struct CombatSlot
     public int PauseUntil;
     /// <summary>Knocked out or dead (a copy of <c>MedicalState.Incapacitated</c> that other characters can read).</summary>
     public bool Down;
+    /// <summary>Crawling from a leg down (posture 2) the last tick: its end is a get-up (docs/game/ragdolls.md "Getting up"). Derived, not hashed.</summary>
+    public bool Crawl;
     /// <summary>Counters: blows thrown, hits landed, blows blocked or dodged by the target, hits taken, blocks, dodges made.</summary>
     public int Thrown, Landed, Parried, Evaded, Taken, Blocks, Dodges;
     /// <summary>The last hit taken, for the hit reaction clip: its tick (-1: none yet), the body part (index into the medical state's parts), whether it was heavy (above the stumble threshold) and came from behind.</summary>
