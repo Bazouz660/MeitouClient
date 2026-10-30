@@ -262,11 +262,10 @@ path-facing branches set the heading at once (before, `Turn` at 4π rad/s, which
 - **Mass combat XP** (`FUN_1408c5e80`) therefore fires on the *target's* stats, once per ask answered in those three cases: being hit at while
   stumbling or already fighting someone. It adds exp gain multiplier × 0.05 to the save-only stat (no consumer found), so it changes nothing
   visible; Meitou does not call `XpService.MassCombat` (the stat is not read anywhere).
-- **Target selection** (`CombatClassAI::chooseAttackTarget` `FUN_140666ee0`, from the deciding state; **Observed**). The current target is kept
+- **Target selection** (`CombatClassAI::chooseAttackTarget` `FUN_140666ee0`, from the deciding state; **Verified** decompile). The current target is kept
   while the pick timer (+0x2f0, s) is under 1 (0.3 on Hold). Then a focused target (CombatClassAI +0x2c8, set by orders 5 and 61,
   [lifecycle](#fight-lifecycle-and-orders)) is returned without scoring, unless its path is in the task system's impossible list
-  (`AITaskSytem::isPathImpossible`) or refocus mode (+0x2e8) is set. Meitou's sense test on the current target (`CombatSystem.CurrentSensed`): sensed now or within its entry's
-  lifetime (`SenseLife`, [Leaving a fight](#leaving-a-fight): 30 / 60 / 120 units of 2 s), for NPCs and the player's characters alike. Otherwise three lists are scored: the attackers (engaged list +0x1f8) of
+  (`AITaskSytem::isPathImpossible`) or refocus mode (+0x2e8) is set. Otherwise three lists are scored: the attackers (engaged list +0x1f8) of
   the AI task's target when the chooser senses it (any entry), the chooser's own attackers, and its threats (SensoryData +0x50). The AI task's target is `AITaskSytem` +0x10, which the
   chooser's end (`FUN_14050ca70`, from `chooseGoal` `FUN_140510ef0`, **Verified**) sets to the chosen goal's target only for goals 45 Bodyguard, 17 Protection, 87, 152 and 124 (operating
   machinery or storage), and clears otherwise: a self-defender (32) or a joiner (15, 143) has none, so only a bodyguard scores its protectee's attackers, and only it gets the +10 term below. A
@@ -275,9 +274,10 @@ path-facing branches set the heading at once (before, `Turn` at 4π rad/s, which
   the sensed-enemy finder `FUN_14059fa70` when the task system's aggro mode (OrdersReceiver +0x30, KenshiLib `AggroType`, 0 aggressive by
   the constructor; no other writer traced) is 0, else no target. The finder (**Verified** decompile) walks the SENSE_ENEMY entries (mask 4, 0x208) that are seen or
   heard now (entry +0x38 / +0x39), not left alone (`FUN_1408569a0`), passing the Hold post test `FUN_140598630` and the area test `FUN_140599f30`
-  ([perception](perception.md)) and not friendly (character vfunc 0x3f0), and returns the best by `FUN_14059e300`. Meitou (`AggroSystem.SensedEnemies`, scored by
-  `ChooseTarget`'s own `Consider`): the attack-on-sight look's enemy tests without its stance tests, sensed = in view (a sneaker with a full spot meter) or heard at the
-  listener's last check within the 2 s hearing cooldown; the aggro mode is taken as 0.
+  ([perception](perception.md)) and not friendly (character vfunc 0x3f0), and returns the best by `FUN_14059e300`. So the current target is kept only as a list
+  member (an attacker, a threat) or, through the finder, while it is seen or heard and tagged an enemy: one that runs out of sight on open ground is lost at the next pick (a path
+  chase does not pick, below). Meitou (`CombatSystem.ChooseTarget` over `CharacterFacts.Senses`, [perception](perception.md#senses)): the lists and the finder as above (the leave-alone and
+  area tests left out), the aggro mode taken as 0; a pick after the timer runs out is made while the fighter runs on a path too (engine choice).
 - **Target score** (`AI::chooseBestAttackTarget` `FUN_14059e300`). Skips ragdolls (`Character::isRagdoll`), candidates the leave-alone test
   `FUN_1408569a0` passes, allies by faction (`FUN_1406b2630`, unless the candidate is a slave) and impossible-path candidates. Leave alone: for
   an NPC chooser, a candidate it does not remember as an attacker and whose faction is not an enemy, when the candidate has diplomatic status
@@ -391,7 +391,7 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   `iAmBeingMeleeAttacked general` (state 159) is "threats list not empty"; `immediate` (158) is Character +0x2b0, set in the periodic update
   (`FUN_1404378f0`, **Verified**) while a threat within 40 (squared 1600, `DAT_1416d4a28`) stands (prone state < 3: staying low and crawling count),
   is not in a bed or cage, not getting up (+0x278), not carried and fails `AI::isTargetOutsideTheGates` (`FUN_140598450`: both places' gate codes
-  known and different and the route between them not open). Meitou: `CombatSystem.ImmediateThreat` (other faction only, as the threats list;
+  known and different and the route between them not open). Meitou: `CombatSystem.ImmediateThreat` over the senses' threats list (`SenseBlock.Threats`, as of the last look;
   the gate test is `LockSystem.NotBlocked`; getting up not modelled).
 - **Self-defence.** Self preservation's desire (AI slot 17): 1 with a threat within 40, 0.7 with a threat of positive aggression within 181.7
   (squared 33000), else 0. It wants `!isAggressionTowardsMe`, given by 13 "Attacking attackers of" (desire 1; finder `AI::findAttackerOf`:
@@ -580,13 +580,12 @@ which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping
 - Time: the world clock is in game hours; the sense-age unit is hours × 3600 / 33 × 0.5 (`FUN_140852150`, `FUN_14033a170`),
   so 12 = 13.2 game minutes, about 24 s real at 1x ([game loop](game-loop.md#the-three-time-values)).
 - So a player's character never gives up a path chase by this rule, and an NPC on open ground (no path chase) keeps
-  running at the target with the footwork lead while it has a fight target. The attack goal's finder (seen/heard only, [Combat goals](ai-tasks.md#combat-goals)) lets go at once; the pick (`FUN_140666ee0`) keeps the target while its
-  sense entry lasts (**Observed**, `SensoryData::decay` `FUN_140859010`): an unsensed entry loses seen/heard, follows the target's real place for 8 sense units (25 out of
-  town), and is dropped after 30, 60 when the target is fighting, a long-term tag (intruder, thief, captor, friend killer) or the looker's slave, 120 for a player
-  character inside the looker's home building. The runner's side: [perception](perception.md#retreat-and-memory).
+  running at the target with the footwork lead while it has a fight target. The attack goal's finder (seen/heard only, [Combat goals](ai-tasks.md#combat-goals)) lets go at once; the pick (`FUN_140666ee0`) keeps
+  a runner only while it is seen or heard, or while it still attacks or threatens the chaser (its entry then lasts, [decay](perception.md#senses)). The runner's side: [perception](perception.md#retreat-and-memory).
 
-Meitou (`AggroSystem.Chase` / `SenseQuarry`): this give-up (9.1 s gate, 24 s unsensed, 60 units; NPCs only, event 60), tested in every
-running chase, not only a path chase (engine choice), but never while a target not sneaking is within 60 of the chaser itself (engine choice: one running past its runner has it at its back); the chaser senses only its own target, a sneaker by sight without the spot meter.
+Meitou (`AggroSystem.Chase`, reading the chaser's sense entry of its target, [perception](perception.md#senses)): this give-up (9.1 s gate, 24 s unsensed, 60 units of the entry's place;
+NPCs only, event 60), tested in every running chase, not only a path chase (engine choice), but never while a target not sneaking is within 60 of the chaser itself (engine choice: one
+running past its runner has it at its back); its own fight target sneaking is seen in view without the spot meter (engine choice).
 
 ## Armour and medical hit
 

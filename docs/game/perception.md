@@ -138,10 +138,40 @@ gate (a fighter standing still makes noise 350 f), the interior, floor, door and
 list `AggroSystem.Slot.Heard`) and the alarm doubling (set only by DA_MASSIVE_ALARM through `AggroSystem.Alarm`; the other alarm sources are not wired); not the sneaking 0.05.
 Hearing does not imply ordinary visual cone/line-of-sight eligibility.
 
+## Senses
+
+`SensoryData` (Character vfunc 0x68; the AI holds it at AI `+0x28`, so AI `+0xb0` is its `+0x88`, `+0xb4` its `+0x8c`, `+0xbc` its `+0x94`). **Verified** by decompile unless marked.
+
+- **Entries**: a hash map by character hand (count `+0x28`), no bound; each 0x40 bytes (`FUN_1408580d0`): place `+0x0`, the time last sensed (`+0x10`, world hours), faction `+0x18`,
+  slave state `+0x20`, tag word `+0x30` ([tags](#sense-tags-who-is-an-enemy); also bit 3 KO when down or dead, bit 9 imprisoned, 5/6 slave states, 7/10/11/12/13/14/15 other states), seen
+  `+0x38`, heard `+0x39`, alert timer `+0x3c` (counted down by the pass).
+- **Pass** (`FUN_14085a070`, with the AI's update): `+0x9c` keeps the last threat total (`+0x88` + `+0x8c`); the counts, threats list, threat sums and nearest enemy (`+0x0`) are cleared;
+  every existing entry is sensed again first (its character taken out of the gather), then each remaining gathered character (`FUN_1408593d0`): seen (`FUN_140857b10`), else heard
+  (`FUN_140857500`). Sensed: the entry is made or refreshed (place, time, seen, heard, tags) and the threats run on it; not sensed: decay. An animal whose last threat total was 0 and is
+  above 0 now says `VO_Creature_Alert`. Dropped entries are deleted at the end (`FUN_140856330`).
+- **Counts** (`FUN_1408593d0`, every entry kept or decayed this pass): tagged ENEMY and its character not down (vfunc 0x30), dead (`+0x5bc`) or carried (`+0x3d4`): `numEnemies` `+0x94`
+  and the nearest's squared distance at `+0x0`; else tagged NEUTRAL and not down, dead or carried: `numNeutrals` `+0x98`. At a refresh an ALLY standing (posture 0), not out and not dead
+  counts at `+0x4c` (conscious allies), any other ALLY at `+0x48`.
+- **Threats** (`addToThreatsAndFlockingList` `FUN_140854370`, at a refresh only): see [combat](combat.md#fight-lifecycle-and-orders). The list `+0x50` is the characters whose intended
+  target is the looker; `+0x88` sums their positive aggression, `+0x8c` the aggression of those whose target is of the looker's faction, `+0x90` all sensed others' intended aggression.
+- **Decay** (`FUN_140859010`): seen and heard cleared; age = (now − time) in sense units (hours × 3600 / 33 × 0.5, 2 s at 1x); while under 8 (25 when the character is in no building,
+  vfunc 0x78 null, that reading **Observed**) the place follows the character's real one; dropped past 30 units, 60 when it is in combat mode, the looker's squad holds a long tag of mask 0x232 on it or it is the
+  looker's slave, 120 for a player-faction character inside the looker's home building (the looker's faction not "not real", `+0x1d0`). A character whose vfunc 0x240 holds is dropped at once.
+- **Forced sense** `FUN_140858f40` (`AI::underMeleeAttack`, massive alarms, a dropped body, a bolt's victim): no entry → one is made as seen (with its threats); then seen set and the
+  alert timer 5. So an attacker is a threat of its target at once.
+- **AI `+0xbc`** is `numEnemies`: its reach is the gather's (sight range, [summary](#summary)) plus every entry not yet decayed. Readers: goal 16's finder and `FUN_14059fa70` (gate), the
+  urgent kind-2 jobs (`FUN_14050e5b0`), state 6 `isNoEnemiesInVicinity`, the medic job's desire (0.01 while `+0xb0` > 0, else 0.05 while `+0xbc` > 0), IS_OUTNUMBERED, playing dead.
+  The fight's end and the chase give-up read the senses directly ([leaving a fight](combat.md#leaving-a-fight)); target choice the threats and the entries ([target selection](combat.md#attack-slots-and-circling)).
+
+Meitou (`SenseBlock`, `CharacterFacts.Senses`): written by `AggroSystem`'s look in `Act` for every living character on its turn (one in `ScanEveryTicks` = 15, by slot), the looker's
+own slot only, and by `AggroSystem.Force` (serial: the alert, a landed blow, a bolt, an alarm). Engine choices: at most 40 entries (`SenseBlock.Cap`; a new one replaces the one sensed
+longest ago), the gather takes up to 60 new characters within 250 then up to 40 in all within reach; a looker that neither fights nor may attack on sight gathers beyond 250 and works
+the relation part of its tags out only every 4th look (`FarLooks`); slot 125 also counts whoever fights the looker or is fought by it, of any faction (Meitou's scripted fights); the
+threat sums count 1 per threat (no aggression value). Without the Aggro part (sandbox, duel, battle) the look keeps the senses only (`AggroSettings.AttackOnSight` false).
+
 ## Retreat and memory
 
-Sense entries keep position/time/seen (`+0x38`)/heard (`+0x39`)/faction/tags; a looker's pass `FUN_1408593d0` creates or refreshes an entry only when it saw (`FUN_140857b10`) or heard (`FUN_140857500`) the target, and `FUN_140858f40` forces one with seen set (**Verified**; the entry's life after sight is lost is **Unknown**). Tag map and update rates come from binary,
-not renderer visibility. Runaway/forced-runaway, home-town retreat, retreat-refresh package and
+Tag map and update rates come from binary, not renderer visibility. Runaway/forced-runaway, home-town retreat, retreat-refresh package and
 squad Run-Away order have different target/ending rules. Faction ratios tune breaking/safe end;
 normal squad trigger and exact selection remain partly unknown. Leash/home/running state must
 not be equated with the attack planner or discarded immediately after a lost sighting.
@@ -217,7 +247,7 @@ is not the looker's ally becomes a target only when both tests pass:
 | Noise range of a mover | lerp(speed ratio, 350, 600); sneaking lerp(stealth, 450, 80); weather x0.25 / x0.75 | **Verified** (literals) | `FUN_140851d10` |
 | Hearing chance per check | 0.75 x (1 - d^2/N^2); sneaking 0.1 (0.05) x (1 - stealth) x ...; x2 if recently alerted | **Verified** (disassembly and bytes) | `FUN_140857500` |
 | Squad-shared sightings | a target a mate saw or heard counts as seen within 2 x R | **Observed** | `FUN_140857b10`, `GroupSense` |
-| Gather per update | every character of the character grid (the dead, the down and animals too) within R on the ground plane, R taking 500 inside town walls instead of inside a building: a value above 0 the character keeps, set from the building it is in, else stands on (a gate: its [gate code](pathfinding.md#gate-codes) at the character's position; a wall: unchanged; another building: its own); at 40 or more, everyone within 250 too. No cap: `FUN_1409ff210` ignores the limits 40 and 20 it is passed | **Verified** (literals; decompile: `FUN_1407866d0` adds the 250 lookup at 40 or more, `FUN_1409ff210` never reads its limit); who the grid holds, the ground-plane test and R's town-walls rule **Observed** | `FUN_14085a8d0`, `FUN_1407866d0`, `FUN_1409ff210`, `FUN_1409fb450`, `FUN_140792200`; Meitou's sight look caps it at 40 + 20 (`AggroSystem.GatherCap`) in grid order, which the original does not |
+| Gather per update | every character of the character grid (the dead, the down and animals too) within R on the ground plane, R taking 500 inside town walls instead of inside a building: a value above 0 the character keeps, set from the building it is in, else stands on (a gate: its [gate code](pathfinding.md#gate-codes) at the character's position; a wall: unchanged; another building: its own); at 40 or more, everyone within 250 too. No cap: `FUN_1409ff210` ignores the limits 40 and 20 it is passed | **Verified** (literals; decompile: `FUN_1407866d0` adds the 250 lookup at 40 or more, `FUN_1409ff210` never reads its limit); who the grid holds, the ground-plane test and R's town-walls rule **Observed** | `FUN_14085a8d0`, `FUN_1407866d0`, `FUN_1409ff210`, `FUN_1409fb450`, `FUN_140792200`; Meitou caps the new characters of a look ([senses](#senses)), which the original does not |
 | Update rate | with the AI, in the logic tick: 8 characters per frame in turn | **Observed** | [game-loop.md](game-loop.md#the-character-update-budget) |
 | Run away (Task_Runaway) | 2000 + 400 r away from the threats' centre, then hops of 1000 + 400 r; until no enemy is sensed (state 6) and no threat attacks within 40 (state 39), 35's list A; under goal 32 until the threat level is 0 | **Verified** (literals), flow **Observed** | `FUN_14034b440`, `FUN_140336820` |
 | Squad not intact (retreat package) | Never while a member is imprisoned (`+0x2f8` 2) or carried by a non-ally (`FUN_14079ab40`); else not intact without a squad leader (platoon `+0xa0`) or with no able member; 4+ members (platoon `+0xa4`): fewer than 20% (40% with the leader down; 0 with squad byte `+0x70`, writer **Unknown**) able; under 4: a persistent platoon (`+0x115`) with a home holder is intact while anyone is able, any other while the leader is up. No retreat-package exception, no enemy counted. Able: alive and not down, or down with `+0x504` under 0.8 (persistent with home) / 0.2 (meaning **Unknown**). Leader down: the generic down test (out, carried, limb-held, playing dead; not crawling). Meitou: `Ai.SquadIntact`, used by `AiSystem.IsIntact` (persistent with home = a town squad with its own building) and the `FleeSystem` trigger; able = alive and not incapacitated The same rule is a platoon's intact flag (`FUN_1407ac7b0`), cached at unload: what campaigns count | **Verified** (decompile `FUN_14079acf0`, `FUN_14079ab40`, `FUN_1407a5be0`) | `FUN_14079acf0` |
@@ -241,7 +271,7 @@ is read into the platoon's patrol settings; its consumer was not traced (**Unkno
 
 - Slot 14 `+0xb4`, slot 60's `+0xd5`, the hearing re-roll factor, the meaning of
   character `+0x504`.
-- Who writes AI `+0xbc` (`isNoEnemiesInVicinity`, SensoryData `numEnemies`) and what it counts; the update cadence of the squad-intact test. (Character `+0x5b8` is the medical crippled flag, [combat](combat.md#crippled-flag).)
+- The update cadence of the squad-intact test; what Character vfunc 0x240 (an entry dropped at once) and tag bit 8 (cleared when seen) are. (Character `+0x5b8` is the medical crippled flag, [combat](combat.md#crippled-flag).)
 - The writer of a character's location handle `+0x80`; when can-see casts its physics ray; the building rules of can-hear;
   the alertness goal float and the +0x3f0 (green pointer) test of spotting.
 

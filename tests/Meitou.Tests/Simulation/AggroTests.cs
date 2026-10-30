@@ -195,10 +195,17 @@ public class AggroTests
         a.World.Commands.Enqueue(new MoveOrder([runner], new Vector3(o.X, 150, o.Y + 20000)) { Tick = a.World.Tick });
         a.World.RunTicks(60);
         Assert.True(a.World.Characters.Cold(raider.Slot)!.CombatRunning, "the raider runs after it");
-        // Escaping: the runner is put far ahead, beyond any sight or noise range, and stands there (so it makes no noise either).
-        if (escapes) a.World.Characters.Place(runner.Slot, new Vector3(o.X, 150, o.Y + 9000), 0);
+        // Escaping: the runner is put far ahead, beyond any sight or noise range, and is ordered onto the raider: as its attacker it stays a candidate of the raider's target choice
+        // (docs/game/combat.md "Target selection"; one that only ran would be dropped at the next choice), so only the give-up lets it go.
+        if (escapes)
+        {
+            a.World.Characters.Place(runner.Slot, new Vector3(o.X, 150, o.Y + 9000), 0);
+            a.World.Commands.Enqueue(new AttackOrder([runner], raider) { Tick = a.World.Tick, Picked = true });
+        }
         long from = a.World.Tick;
-        a.World.RunTicks((int)(60 / a.World.TickSeconds));
+        // Up to the first give-up (the runner, still attacking, is taken on again later), and the two ticks its stop takes.
+        for (int k = 0; k < (int)(60 / a.World.TickSeconds) && !log.Events.Any(e => e.Event == 60); k++) a.World.RunTick();
+        a.World.RunTicks(2);
         var gaveUp = log.Events.Where(e => e.Event == 60).ToList();
         if (escapes)
         {

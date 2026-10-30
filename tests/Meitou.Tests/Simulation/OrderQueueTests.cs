@@ -147,7 +147,7 @@ public class OrderQueueTests
             World = new SimWorld(new WorldSettings { Seed = 7, PublishSnapshots = false }, walk,
             [
                 new PlayerSystem(), new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame, BodyOptions.Default),
-                new ProductionSystem(db, BaseGame, BodyOptions.Default, items, null), combat, new RetaliationSystem(combat), .. aggro ? [new AggroSystem(Hostile())] : Array.Empty<ITickSystem>(),
+                new ProductionSystem(db, BaseGame, BodyOptions.Default, items, null), combat, new RetaliationSystem(combat), aggro ? new AggroSystem(Hostile()) { Combat = combat } : Senses(combat),
             ]);
             World.Player.Faction = 1;
             Turret = World.Buildings.NewId(WorldLayout.ZoneOf(1000, 2000));

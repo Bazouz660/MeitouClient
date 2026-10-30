@@ -233,40 +233,30 @@ public sealed partial class CombatSystem : IProjectileSource
     static float Gap(ReadOnlySpan<CharacterHot> prev, CharacterTable table, int a, int b) =>
         Vector2.Distance(new(prev[a].Position.X, prev[a].Position.Z), new(prev[b].Position.X, prev[b].Position.Z)) - CombatTuning.Footprint(table.Cold(a)) - CombatTuning.Footprint(table.Cold(b));
 
-    struct ThreatScan
-    {
-        public CombatSlot[] Read;
-        public CharacterTable Table;
-        public int Self, SelfGeneration, Faction;
-        public World World;
-        public Locks.LockSystem? Locks;
-        public bool Found;
-    }
-
     /// <summary>
-    /// A threat within <see cref="RetaliationSystem.ImmediateReach"/> (the planner's <c>iAmBeingMeleeAttacked immediate</c>, Character +0x2b0, recomputed by
-    /// <c>FUN_1404378f0</c>, <b>Verified</b>; docs/game/combat.md "Fight lifecycle and orders"): a fighter of another faction whose target the character is, by centre
-    /// distance, not down (staying low or crawling still count), not in a bed or cage, not carried, and not behind a gate that is not open between them
-    /// (<c>FUN_140598450</c>, <see cref="Locks.LockSystem.NotBlocked"/>). The original's "getting up" byte (+0x278) is not modelled.
+    /// A threat within <see cref="RetaliationSystem.ImmediateReach"/> (the planner's <c>iAmBeingMeleeAttacked immediate</c>, Character +0x2b0, recomputed by <c>FUN_1404378f0</c> over the
+    /// threats list, <b>Verified</b>; docs/game/combat.md "Fight lifecycle and orders"): one of the senses' threats (<see cref="SenseBlock.Threats"/>) by centre distance, not down (staying
+    /// low or crawling still count), not in a bed or cage, not carried, and not behind a gate that is not open between them (<c>FUN_140598450</c>, <see cref="Locks.LockSystem.NotBlocked"/>).
+    /// The original's "getting up" byte (+0x278) is not modelled.
     /// </summary>
     internal bool ImmediateThreat(World world, int self)
     {
-        var prev = world.Characters.Previous;
-        if (world.Characters.Cold(self) is not { } me) return false;
-        var scan = new ThreatScan { Read = read, Table = world.Characters, Self = self, SelfGeneration = prev[self].Generation, Faction = me.Faction, World = world, Locks = Locks };
-        world.Grid.Query(prev[self].Position.X, prev[self].Position.Z, RetaliationSystem.ImmediateReach, ref scan, static (int other, ref ThreatScan st) =>
+        var table = world.Characters;
+        var prev = table.Previous;
+        if (CharacterFacts.Senses(world, self) is not { } senses) return false;
+        var here = prev[self].Position;
+        foreach (var id in senses.Threats)
         {
-            if (st.Found || other == st.Self) return;
-            ref readonly var o = ref st.Read[other];
-            if (o.TargetSlot != st.Self || o.TargetGeneration != st.SelfGeneration || o.Down) return;
-            if (st.Table.Cold(other) is not { } c || c.Faction == st.Faction || c.InSomething != global::Meitou.Simulation.Locks.HeldState.None || !c.CarriedBy.IsNone) return;
-            var at = st.Table.Previous[other].Position;
-            var d = at - st.Table.Previous[st.Self].Position;
-            if (d.X * d.X + d.Z * d.Z > RetaliationSystem.ImmediateReach * RetaliationSystem.ImmediateReach) return;
-            if (st.Locks is { } locks && !locks.NotBlocked(st.World, st.Table.Previous[st.Self].Position, at)) return;
-            st.Found = true;
-        });
-        return scan.Found;
+            int a = id.Slot;
+            if ((uint)a >= (uint)prev.Length || !prev[a].Alive || prev[a].Generation != id.Generation || read[a].Down) continue;
+            if (table.Cold(a) is not { } c || c.InSomething != global::Meitou.Simulation.Locks.HeldState.None || !c.CarriedBy.IsNone) continue;
+            var at = prev[a].Position;
+            var d = at - here;
+            if (d.X * d.X + d.Z * d.Z > RetaliationSystem.ImmediateReach * RetaliationSystem.ImmediateReach) continue;
+            if (Locks is { } locks && !locks.NotBlocked(world, here, at)) continue;
+            return true;
+        }
+        return false;
     }
 
     internal static WeaponKinds MeleeDrawn(Fighter f) => f.Weapon is { } w && !f.Unarmed ? HandHold.OfCategory(w.Data.AnimationCategory).Weapon : WeaponKinds.None;

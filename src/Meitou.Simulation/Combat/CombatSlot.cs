@@ -71,8 +71,6 @@ public struct CombatSlot
     public bool Picked;
     /// <summary>The tick of its next target choice (<see cref="CombatSystem.PickSeconds"/>); 0: at once.</summary>
     public int PickTick;
-    /// <summary>The tick a player's fighter last sensed its target (<see cref="CombatSystem.PickSeconds"/>'s sense test keeps it <see cref="AggroSystem.GiveUpSenseSeconds"/> after).</summary>
-    public int SensedTick;
     /// <summary>
     /// The Block order's timer while engaged (the tick it runs out, 0: not running) and the tick it last ran out: swings at the character started before that hold no attack
     /// slot any more (<c>CircleStateAI</c> FUN_1402b3180 → FUN_1406658c0, docs/game/combat.md "Attack slots and circling").
@@ -149,7 +147,6 @@ public struct CombatSlot
         if (CircleState) h.Add(0x43697263);   // only when set, so worlds without crowded fights hash as before
         if (Picked) h.Add(true);   // only when set, so worlds without player picks hash as before
         h.Add(PickTick);
-        h.Add(SensedTick);
         h.Add(BlockTimerTick);
         h.Add(SlotsCleared);
         // The ranged controller goes in only once it has been used, so worlds without crossbows hash as they did before it existed.

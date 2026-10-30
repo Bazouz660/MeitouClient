@@ -132,11 +132,10 @@ public sealed partial class ProductionSystem
         }
 
         /// <summary>
-        /// A Turret guard (234, kind 2) is urgent while enemies are sensed (AI <c>+0xbc</c>, <c>FUN_14050e5b0</c>); stand-in: the attack-on-sight look's sensed-enemy finder
-        /// (<see cref="AggroSystem.SensesEnemy"/>; the sensed list is M7).
+        /// A Turret guard (234, kind 2) is urgent while enemies are sensed (AI <c>+0xbc</c>, the senses' <c>numEnemies</c>, <see cref="SenseBlock.Enemies"/>; <c>FUN_14050e5b0</c>).
         /// </summary>
         public bool Urgent(World world, int slot, int k) =>
-            world.Characters.Cold(slot)!.Jobs[k].Type == TaskType.MAN_A_TURRET_PLAYER_JOB && world.SystemOf<AggroSystem>() is { } aggro && aggro.SensesEnemy(world, slot);
+            world.Characters.Cold(slot)!.Jobs[k].Type == TaskType.MAN_A_TURRET_PLAYER_JOB && CharacterFacts.Senses(world, slot) is { Enemies: > 0 };
 
         public void Stop(World world, int slot, int k) => End(world, slot);
     }

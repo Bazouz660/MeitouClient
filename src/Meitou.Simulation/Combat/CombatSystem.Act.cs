@@ -277,7 +277,7 @@ public sealed partial class CombatSystem
             {
                 s.AttackTech = -1;
                 s.NextBlow = 0;
-                int pick = ChooseTarget(world, i, s, cold, keep: false);
+                int pick = ChooseTarget(world, i, s, cold);
                 s.PickTick = now + PickTicks(world, cold);
                 if (pick >= 0) { Retarget(ref s, pick, prev[pick].Generation, now); next[i].TaskTime = 0; }   // its path is asked for at once, not after the wait the last target's failure set (PursuitSystem)
                 else
@@ -291,7 +291,7 @@ public sealed partial class CombatSystem
             // A player's pick is kept, unless no path leads to it (the focused target is dropped while its path is impossible).
             else if (fighting && (!s.Picked || PursuitSystem.PathImpossible(cold, new CharacterId(s.TargetSlot, s.TargetGeneration), now)) && now >= s.PickTick && s.AttackTech < 0 && s.ReactTech < 0)
             {
-                int pick = ChooseTarget(world, i, s, cold, keep: CurrentSensed(world, i, ref s, cold, now));
+                int pick = ChooseTarget(world, i, s, cold);
                 s.PickTick = now + PickTicks(world, cold);
                 if (pick >= 0 && pick != s.TargetSlot) { Retarget(ref s, pick, prev[pick].Generation, now); next[i].TaskTime = 0; }
                 else if (pick < 0)

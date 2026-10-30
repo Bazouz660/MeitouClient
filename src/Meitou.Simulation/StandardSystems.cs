@@ -221,6 +221,8 @@ public static class StandardSystems
         if (Has(StandardParts.Retaliation)) systems.Add(new RetaliationSystem(combat!) { Towns = data });
         AggroSystem? aggro = null;
         if (Has(StandardParts.Aggro)) systems.Add(aggro = new AggroSystem(data.Relations, o.Aggro) { Combat = combat, Towns = data, Population = population });
+        // Without the Aggro part a fight still reads the senses (target choice, threats, the fight's end): the look keeps them, and nothing else.
+        else if (combat is not null) systems.Add(new AggroSystem(data.Relations, (o.Aggro ?? new AggroSettings()) with { AttackOnSight = false }) { Combat = combat, Towns = data, Population = population });
         if (carry is not null) carry.Aggro = aggro;
         if (Has(StandardParts.Flee)) systems.Add(new FleeSystem(data.Relations, combat!, o.Aggro?.SightRange ?? AggroSystem.OutdoorSight));
         Meitou.Simulation.Crime.CrimeSystem? crime = null;

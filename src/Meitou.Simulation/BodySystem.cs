@@ -123,27 +123,10 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
 
     /// <summary>
     /// The sense counts playing dead and the ordered get-up read (<c>SensoryData</c> <c>numEnemies</c>, <c>numNeutrals</c>, <c>numConsciousAllies</c>, tallied by <c>FUN_1408593d0</c> and
-    /// <c>FUN_1408580d0</c>, <b>Observed</b>): enemies and neutrals awake, alive and not carried; allies standing (posture 0), awake and alive. Meitou senses by distance within the vision
-    /// range (<see cref="AggroSystem.RangeOf"/>; 500 inside a building); an enemy is the combat system's (<see cref="Combat.CombatSystem.IsEnemyOf"/>), an ally of the same or an allied
-    /// faction, anyone else neutral.
+    /// <c>FUN_1408580d0</c>, <b>Verified</b>): the character's senses as of its last look (<see cref="CharacterFacts.Senses"/>); none before it.
     /// </summary>
-    internal static (int Enemies, int Neutrals, int Allies) Senses(World world, Combat.CombatSystem combat, int me, CharacterCold cold)
-    {
-        var table = world.Characters;
-        var at = table.Previous[me].Position;
-        float r = world.Sight.Inside(me) ? InsideSight : AggroSystem.RangeOf(cold, AggroSystem.OutdoorSight);
-        int enemies = 0, neutrals = 0, allies = 0;
-        for (int j = 0; j < table.HighWater; j++)
-        {
-            if (j == me || !table.Previous[j].Alive || table.Cold(j) is not { Medical: { Incapacitated: false } om } o) continue;
-            if (Vector3.DistanceSquared(table.Previous[j].Position, at) > r * r) continue;
-            if (o.Faction == cold.Faction || combat.Relations?.IsAlly(cold.Faction, o.Faction) == true) { if (!om.Prone) allies++; }
-            else if (!o.CarriedBy.IsNone) continue;
-            else if (combat.IsEnemyOf(world, j, o, me, cold.Faction)) enemies++;
-            else neutrals++;
-        }
-        return (enemies, neutrals, allies);
-    }
+    internal static (int Enemies, int Neutrals, int Allies) Senses(World world, Combat.CombatSystem combat, int me, CharacterCold cold) =>
+        CharacterFacts.Senses(world, me) is { } b ? (b.Enemies, b.Neutrals, b.Allies) : (0, 0, 0);
 
     /// <summary>
     /// Getting up on the player's order (<c>Task_GetUp</c> start <c>FUN_14033ca10</c> with <c>playerWantsMeToGetUp</c>, then <c>FUN_1408c6780</c>, <b>Observed</b>; the Toughness tooltip's
