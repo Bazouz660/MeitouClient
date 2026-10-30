@@ -540,7 +540,7 @@ Engine additions: Trade with a trader, Put in Cage, Put on Shackles, Cancel Cons
 complete buildings with doors (Meitou's stand-in for the target's building handle, slot `0x1d8`, being the player's) adds the Remove Home Intruder job and its companion 224. **Throw out of town** (273, always the job `PICKUP_INTRUDERS_TOWN`) instead when the town the target stands in (`AiSystem.TownAt`) is the player's, its position is inside
 the walls (`TownDutySystem.AmInsideTownWalls`: gate code, else the built-up area) and the lead (the last selected, as for the turret test) does not regard it as friendly; no 223 there.
 **Corpse Disposal** (136) on the player's corpse machine (function 11): with Shift the Corpse disposal job (137, finder 138), else each selected character carrying a dead body
-takes it to the nearest free incinerator (`DisposeCorpseOrder`; the order's condition 99 read as carrying a dead body, **engine reading**). Not built: Repairs (60), Lock / Unlock of a cage (Pick Lock stands in), item menus beyond a ground item's Pick Up / Steal, the occupant's second menu and the unconscious message.
+takes it to the nearest free incinerator (`DisposeCorpseOrder`; the order's condition 99 read as carrying a dead body, **engine reading**). Not built: Lock / Unlock of a cage (Pick Lock stands in), item menus beyond a ground item's Pick Up / Steal, the occupant's second menu and the unconscious message.
 
 ### Edit boxes and keyboard focus
 
