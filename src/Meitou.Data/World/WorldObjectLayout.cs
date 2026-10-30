@@ -111,8 +111,8 @@ public static class WorldObjectLayout
     static Quaternion Normalized(Quaternion q) => q.LengthSquared() < 1e-12f ? Quaternion.Identity : Quaternion.Normalize(q);
 
     /// <summary>
-    /// A loose item on the ground (docs/simulation.md "Ground items"): the record's <c>ground mesh</c>, else its <c>mesh</c>, at <paramref name="worldPosition"/> turned by
-    /// <paramref name="rotation"/>; its look is the material resolver's pick for the record (its <c>material</c> list). Null when the record names no mesh.
+    /// A loose item on the ground (docs/simulation.md "Ground items"): its <see cref="ItemMesh"/> at <paramref name="worldPosition"/> turned by <paramref name="rotation"/>; its look is the
+    /// material resolver's pick for the record (its <c>material</c> list).
     /// </summary>
     public static PlacedMesh? Item(GameRecord item, string placementId, Vector3 worldPosition, Quaternion rotation)
     {
@@ -136,8 +136,12 @@ public static class WorldObjectLayout
         return new PlacedMesh(mesh, transform, part, part, "meitou:editor-platform", PlacedKind.BuildingPart) { Material = material };
     }
 
-    /// <summary>The mesh a loose item is drawn with: its <c>ground mesh</c>, else its <c>mesh</c>; "" for none.</summary>
-    public static string ItemMesh(GameRecord item) => item.GetPath("ground mesh") is { Length: > 0 } ground ? ground : item.GetPath("mesh");
+    /// <summary>
+    /// The mesh a loose item is drawn with: its <c>ground mesh</c>, else its <c>mesh</c>, else <c>steel1.mesh</c> (<c>FUN_140760300</c>, <b>Verified</b>). Not modelled: a weapon that exists bare
+    /// takes its <c>bare sword</c> in place of <c>mesh</c> there (the flag from a save's <c>bare weapon</c>; for a drop <b>Unknown</b>).
+    /// </summary>
+    public static string ItemMesh(GameRecord item) =>
+        item.GetPath("ground mesh") is { Length: > 0 } ground ? ground : item.GetPath("mesh") is { Length: > 0 } mesh ? mesh : "steel1.mesh";
 
     /// <summary>
     /// Meshes of a placed building and of the doors it lists. <paramref name="worldPosition"/> is the absolute position

@@ -377,8 +377,8 @@ through the item's vfunc +0x228 (`FUN_14075d9b0`; its vfunc +0x2d0 `FUN_14075d66
 (`GameHost.LaidFlat`): its mesh bounds' thinnest axis up (the severed limb meshes are plain static meshes lying along +X, bounds read equal to their vertices, **Verified** on every `severed limbs` mesh of the install's
 merged data), its yaw, tilted to the terrain slope under it (the heights round the drop point over the item's own size; not on a building's floor, where the simulation's ground is used flat), and set down so that none of a
 5x5x5 lattice of points of its bounds is below the rendered terrain under it. A weapon, modelled along +Y, lies on the flat of its blade. Read items are drawn by their saved position and whole rotation. The host adds each as a runtime world-object
-placement of its record's `ground mesh` / `mesh` (`GameHost.GroundItems`, `WorldObjectLayout.Item`). A right click on one (within 24 px of its
-projected middle, pointer `pick_item`) gives `PickUpItemOrder`: the nearest able selected character walks to it and, within 15 units
+placement of its record's `ground mesh` / `mesh` (else `steel1.mesh`, as the original; a bare weapon's `bare sword` not modelled; `GameHost.GroundItems`, `WorldObjectLayout.Item`). A right click on one (on its collision where it is drawn,
+[collision](formats/collision.md#item-physics); pointer `pick_item`) gives `PickUpItemOrder`: the nearest able selected character walks to it and, within 15 units
 (`PlayerSystem.PickUpReach`), puts it in its inventory (`Inventory.Add`), or when it does not fit, wears it in its free equipment slot (`InventoryCommands.TryEquip`); what does not fit
 stays on the ground ("Not enough room in my inventory"). Another order or a stop ends the walk. A picked-up read item keeps its ITEM record's keys in its inventory record. Engine choices.
 

@@ -6,28 +6,28 @@ namespace Meitou.Game;
 
 /// <summary>
 /// Cages under the pointer (docs/game/ui-input.md "Context menu verbs", the cage rows; the cages are published as <see cref="WorldSnapshot.Cages"/>): a quick right click on an empty cage
-/// picks a locked one's lock, puts the carried captive in a free one (108) or gets the character in (107) (with Shift held; else the cage's menu opens on the press). Engine choice: the picking magnet and the "Cage" title,
-/// as for beds and containers (a cage has no pick mesh here).
+/// picks a locked one's lock, puts the carried captive in a free one (108) or gets the character in (107) (with Shift held; else the cage's menu opens on the press). Engine choice: the "Cage" title.
 /// </summary>
 sealed partial class PlayerInterface
 {
-    /// <summary>How near the pointer a cage's projected middle must be, in pixels (an engine choice, as for beds).</summary>
-    const float CagePickPixels = 30;
-
-    /// <summary>The cage whose middle (half a unit above its spot) projects nearest the pixel within <see cref="CagePickPixels"/>, if any and not hidden behind a wall, with the ray distance.</summary>
+    /// <summary>
+    /// The cage under the pixel with the ray distance, when not hidden behind a wall: the nearest the ray meets on its record's collision, as a container is picked
+    /// (<see cref="PickContainerAt"/>); one without collision, or above the shown floor of the building the player is in, cannot be picked.
+    /// </summary>
     (CageSpot Cage, float T)? PickCageAt(Vector2 pixel)
     {
-        if (Ray(pixel) is not { } ray) return null;
-        (CageSpot, float)? best = null;
-        float bestDistance = CagePickPixels;
-        foreach (var c in session.CurrentSnapshot.Cages)
+        if (Ray(pixel) is not { } ray || buildHost?.Placement is not { } placement) return null;
+        var cages = session.CurrentSnapshot.Cages;
+        (CageSpot, float)? hit = null;
+        float bestT = float.MaxValue;
+        foreach (var c in cages)
         {
-            var middle = c.Position + new Vector3(0, 0.5f, 0);
-            if (Project(middle) is not { } at) continue;
-            float d = Vector2.Distance(at, pixel), t = Vector3.Distance(ray.Origin, middle);
-            if (d < bestDistance && !Hidden(ray, t)) (best, bestDistance) = ((c, t), d);
+            if (placement.Footprint(c.Record) is not { } footprint) continue;
+            var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, c.Yaw);
+            if (BuildingRayT(ray, footprint.Place(c.Position, yaw), footprint.YMin, footprint.YMax, c.Record, c.Position, c.Position.Y, yaw) is { } t && t < bestT && AboveViewedFloor?.Invoke(c.Position) != true && !Hidden(ray, t))
+                (hit, bestT) = ((c, t), t);
         }
-        return best;
+        return hit;
     }
 
     /// <summary>
@@ -69,7 +69,8 @@ sealed partial class PlayerInterface
 
     /// <summary>
     /// A right press on a cage (true, with a selection): its menu opens at once, whoever owns it and whether it is occupied, unless Shift is held (<c>FUN_140800250</c>, <b>Verified</b>);
-    /// with Shift, released quickly, the first of the cage's verbs while it is empty, held, its menu.
+    /// with Shift, released quickly, the first of the cage's verbs while it is empty, held, its menu. An occupied cage with occupant selection is pointed at as its occupant instead
+    /// (<see cref="PickWhereAt"/>).
     /// </summary>
     bool CageClick(Vector2 p)
     {

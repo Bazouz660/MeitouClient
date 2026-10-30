@@ -712,6 +712,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// </summary>
     public IReadOnlyDictionary<string, int> InteriorView { get; set; } = new Dictionary<string, int>();
 
+    /// <summary>The loose items (placement ids) above the shown floor of their building in the interior view: not drawn. Set by the game, which picks by the same answer.</summary>
+    public IReadOnlySet<string> HiddenItems { get; set; } = new HashSet<string>();
+
     /// <summary>The nearest loaded building's movement destination, using collision up to the viewed floor, before the terrain.</summary>
     public Vector3? MoveHit(Vector3 origin, Vector3 direction, int floor, float maxDistance) => FloorHit(origin, direction, floor, maxDistance)?.Position;
 
@@ -739,6 +742,19 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         foreach (var zone in streamer.AllZones)
             foreach (var room in zone.Interiors)
                 if (!InteriorView.ContainsKey(room.PlacementId) && room.MaskHit(origin, direction, best ?? maxDistance) is { } t) best = t;
+        return best;
+    }
+
+    /// <summary>
+    /// The nearest distance along the ray at which it meets the collision of a building in <see cref="InteriorView"/> on a floor it shows (as <see cref="MoveHit"/>), within
+    /// <paramref name="maxDistance"/>: what lies beyond is not pointed at (game: the pick's walk ends at such a building's hit, <c>FUN_140800250</c>). Null when none is in the way.
+    /// </summary>
+    public float? ShownInteriorHit(Vector3 origin, Vector3 direction, float maxDistance)
+    {
+        float? best = null;
+        foreach (var zone in streamer.AllZones)
+            foreach (var room in zone.Interiors)
+                if (InteriorView.TryGetValue(room.PlacementId, out int floor) && room.MoveHit(origin, direction, floor, best ?? maxDistance) is { } hit) best = hit.Distance;
         return best;
     }
 
@@ -772,12 +788,14 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     }
 
     /// <summary>
-    /// Whether a building of its own (a turret on a wall, furniture the player placed) stands above the viewed floor of a building in the interior view, by where it
-    /// stands in that building's hull: it is hidden with that floor (game: FUN_1409fb540 hides objects above their building's floor, as the host does for characters).
+    /// Whether a building of its own (a turret on a wall, furniture the player placed) stands above the viewed floor of a building in the interior view, by
+    /// where it stands in that building's hull: it is hidden with that floor (game: FUN_140547140 / FUN_14054a8f0, as the host does for characters). A loose item: the game's answer
+    /// (<see cref="HiddenItems"/>, FUN_1409fb540).
     /// </summary>
     bool StandsAbove(ObjectStreamer.Instance inst)
     {
         var p = inst.Placed;
+        if (p.Kind == PlacedKind.Item) return !AllFloors && HiddenItems.Contains(p.PlacementId);
         if (InteriorView.Count == 0 || AllFloors || p.Kind != PlacedKind.BuildingPart || p.ParentPlacementId is not null || InteriorView.ContainsKey(p.PlacementId)) return false;
         var answer = InteriorOf(inst);
         return answer.Building is { } building && InteriorView.TryGetValue(building, out int floor) && answer.Floor > floor;

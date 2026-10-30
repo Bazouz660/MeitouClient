@@ -13,14 +13,15 @@ namespace Meitou.Game;
 /// </summary>
 sealed partial class PlayerInterface
 {
-    /// <summary>How near the pointer the projected middle of a bed without a footprint must be, in pixels (an engine choice, as for containers).</summary>
+    /// <summary>How near the pointer the projected middle of a bed without a footprint must be, in pixels (an engine choice).</summary>
     const float BedPickPixels = 30;
 
     BedSpot? PickBed(Vector2 pixel) => PickBedAt(pixel)?.Bed;
 
     /// <summary>
-    /// The bed under the pixel with the ray distance, when not hidden behind a wall: the nearest the ray meets on its record's collision (hull prism, then triangles), as a building is
-    /// picked; else the bed without a footprint whose middle (half a unit above its spot) projects nearest the pixel within <see cref="BedPickPixels"/>.
+    /// The bed under the pixel with the ray distance, when not hidden behind a wall nor above the viewed floor of the building the player is in (<see cref="AboveViewedFloor"/>): the
+    /// nearest the ray meets on its record's collision (hull prism, then triangles), as a building is picked; else the bed without a footprint whose middle (half a unit above its spot)
+    /// projects nearest the pixel within <see cref="BedPickPixels"/>. Until its collision is read (on workers) the magnet stands in.
     /// </summary>
     (BedSpot Bed, float T)? PickBedAt(Vector2 pixel)
     {
@@ -32,14 +33,14 @@ sealed partial class PlayerInterface
             if (buildHost?.Placement.Footprint(b.Record) is { } footprint)
             {
                 var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, b.Yaw);
-                if (BuildingRayT(ray, footprint.Place(b.Position, yaw), footprint.YMin, footprint.YMax, b.Record, b.Position, b.Position.Y, yaw) is { } t && t < bestT && !Hidden(ray, t))
+                if (BuildingRayT(ray, footprint.Place(b.Position, yaw), footprint.YMin, footprint.YMax, b.Record, b.Position, b.Position.Y, yaw) is { } t && t < bestT && AboveViewedFloor?.Invoke(b.Position) != true && !Hidden(ray, t))
                     (hit, bestT) = ((b, t), t);
                 continue;
             }
             var middle = b.Position + new Vector3(0, 0.5f, 0);
             if (Project(middle) is not { } at) continue;
             float d = Vector2.Distance(at, pixel), distance = Vector3.Distance(ray.Origin, middle);
-            if (d < bestPixels && !Hidden(ray, distance)) (near, bestPixels) = ((b, distance), d);
+            if (d < bestPixels && AboveViewedFloor?.Invoke(b.Position) != true && !Hidden(ray, distance)) (near, bestPixels) = ((b, distance), d);
         }
         return hit ?? near;
     }

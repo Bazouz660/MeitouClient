@@ -10,8 +10,11 @@ namespace Meitou.Game;
 /// </summary>
 sealed partial class PlayerInterface
 {
-    /// <summary>How near the pointer an item's projected middle must be, in pixels (an engine choice: the items have no pick mesh).</summary>
-    const float GroundItemPickPixels = 24;
+    /// <summary>What the ray meets of a ground item where it is drawn: its triangles in its own space, its place and turn (the host sets it; null: no item is picked but by its label).</summary>
+    public Func<Meitou.Simulation.Items.GroundItemSnapshot, (IReadOnlyList<(Vector3[] Vertices, int[] Indices)> Mesh, Vector3 At, Quaternion Rotation)?>? GroundItemShape { get; set; }
+
+    /// <summary>Whether a ground item is not drawn, being above the shown floor of its building (the host sets it; null: none): it has no label and is not picked.</summary>
+    public Func<int, bool>? GroundItemHidden { get; set; }
 
     /// <summary>The camera's focus while the Highlight key is held (the host sets it; null otherwise): the item labels show round it.</summary>
     public Vector3? HighlightFocus;
@@ -20,28 +23,45 @@ sealed partial class PlayerInterface
     readonly List<(int Id, UiRect Rect)> itemLabels = [];
 
     /// <summary>
-    /// The ground item whose label is under the pixel, else whose middle (half a unit above where it lies) projects nearest the pixel within
-    /// <see cref="GroundItemPickPixels"/>, if any; one inside or behind a building seen from outside does not count.
+    /// The ground item whose label is under the pixel, else the nearest the ray meets on its collision (<see cref="GroundItemShape"/>), as the original's pick hits an item's
+    /// shapes; one inside or behind a building seen from outside does not count.
     /// </summary>
     int? PickGroundItem(Vector2 pixel) => PickGroundItemAt(pixel)?.Id;
 
-    /// <summary><see cref="PickGroundItem"/> with the ray distance to the item's middle (0 for a label: it is drawn over everything).</summary>
+    /// <summary><see cref="PickGroundItem"/> with the ray distance (0 for a label: it is drawn over everything).</summary>
     (int Id, float T)? PickGroundItemAt(Vector2 pixel)
     {
         if (HighlightFocus is not null)
             foreach (var (id, rect) in itemLabels)
                 if (rect.Contains(pixel.X, pixel.Y)) return (id, 0);
-        if (Ray(pixel) is not { } ray) return null;
+        if (Ray(pixel) is not { } ray || GroundItemShape is not { } shapeOf) return null;
         (int, float)? best = null;
-        float bestDistance = GroundItemPickPixels;
+        float bestT = float.MaxValue;
         foreach (var g in session.CurrentSnapshot.GroundItems)
-        {
-            var middle = g.Position + new Vector3(0, 0.5f, 0);
-            if (Project(middle) is not { } at) continue;
-            float d = Vector2.Distance(at, pixel), t = Vector3.Distance(ray.Origin, middle);
-            if (d < bestDistance && !Hidden(ray, t)) (best, bestDistance) = ((g.Id, t), d);
-        }
+            if (GroundItemHidden?.Invoke(g.Id) != true && shapeOf(g) is { } shape && RayNears(ray, shape.Mesh, shape.At, shape.Rotation) && RayMesh(ray, shape.Mesh, shape.At, shape.Rotation) is { } t && t < bestT && !Hidden(ray, t))
+                (best, bestT) = ((g.Id, t), t);
         return best;
+    }
+
+    /// <summary>Each ground item shape's bounding sphere in its own space, by the shape (the host keeps one per record): the cheap test before its triangles.</summary>
+    readonly Dictionary<IReadOnlyList<(Vector3[] Vertices, int[] Indices)>, (Vector3 Centre, float Radius)> shapeSpheres = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Whether the ray passes through the bounding sphere of the shape put at <paramref name="at"/> turned by <paramref name="rotation"/> (a hit on its triangles is inside it).</summary>
+    bool RayNears((Vector3 Origin, Vector3 Direction) ray, IReadOnlyList<(Vector3[] Vertices, int[] Indices)> mesh, Vector3 at, Quaternion rotation)
+    {
+        if (!shapeSpheres.TryGetValue(mesh, out var sphere))
+        {
+            var min = new Vector3(float.MaxValue);
+            var max = new Vector3(float.MinValue);
+            foreach (var (vertices, _) in mesh) foreach (var v in vertices) { min = Vector3.Min(min, v); max = Vector3.Max(max, v); }
+            float reach = 0;
+            foreach (var (vertices, _) in mesh) foreach (var v in vertices) reach = MathF.Max(reach, Vector3.Distance(v, (min + max) / 2));
+            shapeSpheres[mesh] = sphere = ((min + max) / 2, reach * 1.001f + 1e-3f);   // widened a little for rounding
+        }
+        var q = rotation.LengthSquared() < 1e-12f ? Quaternion.Identity : Quaternion.Normalize(rotation);
+        var toCentre = at + Vector3.Transform(sphere.Centre, q) - ray.Origin;
+        float along = MathF.Max(Vector3.Dot(toCentre, ray.Direction) / ray.Direction.LengthSquared(), 0);   // the ray's nearest point to the centre, not behind its origin
+        return (toCentre - ray.Direction * along).LengthSquared() <= sphere.Radius * sphere.Radius;
     }
 
     /// <summary>
@@ -71,7 +91,7 @@ sealed partial class PlayerInterface
         var near = new List<(Meitou.Simulation.Items.GroundItemSnapshot Item, float Distance, Vector2 At)>();
         foreach (var g in session.CurrentSnapshot.GroundItems)
         {
-            if (g.Name.Length == 0 || Vector3.DistanceSquared(focus, g.Position) > HighlightRadius * HighlightRadius) continue;
+            if (g.Name.Length == 0 || GroundItemHidden?.Invoke(g.Id) == true || Vector3.DistanceSquared(focus, g.Position) > HighlightRadius * HighlightRadius) continue;
             var middle = g.Position + new Vector3(0, 0.5f, 0);
             if (Project(middle) is not { } at || Ray(at) is not { } ray) continue;
             float distance = Vector3.Distance(ray.Origin, middle);

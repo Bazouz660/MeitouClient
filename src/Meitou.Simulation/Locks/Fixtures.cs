@@ -38,14 +38,23 @@ public readonly record struct BedData(int Function, string? Clip, float Material
 /// </summary>
 public readonly record struct BedNode(Vector3 At, float Yaw);
 
-/// <summary>A container with an inventory as the host picks it: its fixture id, BUILDING record, position, owner faction (-1: none) and whether its lock is locked.</summary>
-public sealed record ContainerSpot(string Id, string Record, Vector3 Position, int Owner = -1, bool Locked = false, int Level = 0);
+/// <summary>A container with an inventory as the host picks it: its fixture id, BUILDING record, position, owner faction (-1: none), whether its lock is locked, its lock's level and its yaw.</summary>
+public sealed record ContainerSpot(string Id, string Record, Vector3 Position, int Owner = -1, bool Locked = false, int Level = 0, float Yaw = 0);
 
 /// <summary>A door for the host's picking: its fixture id, its key in <see cref="WorldSnapshot.Doors"/>, its owner faction, where its closed leaf is (else its building's origin) and how far it slides fully open (<see cref="DoorSpot.Slide"/>).</summary>
-/// <summary>A cage for picking: its fixture id, CAGE-function BUILDING record, place, owner faction (-1 none), whether its lock holds and who is in it (None: free).</summary>
-public sealed record CageSpot(string Id, string Record, Vector3 Position, int Owner, bool Locked, CharacterId Occupant, int Level = 0);
+/// <summary>
+/// A cage for picking: its fixture id, CAGE-function BUILDING record, place, owner faction (-1 none), whether its lock holds, who is in it (None: free), its lock's level, its yaw and
+/// whether pointing at it points at its occupant (<see cref="Fixture.OccupantSelection"/>).
+/// </summary>
+public sealed record CageSpot(string Id, string Record, Vector3 Position, int Owner, bool Locked, CharacterId Occupant, int Level = 0, float Yaw = 0, bool OccupantSelection = false);
 
-public sealed record DoorPick(string Id, string Building, int Door, int Owner, Vector3 Position, Vector3 Slide = default);
+public sealed record DoorPick(string Id, string Building, int Door, int Owner, Vector3 Position, Vector3 Slide = default)
+{
+    /// <summary>The BUILDING record whose door it is, where that building stands and its yaw: the frame of its collision (<c>NavDoorGeometry.Shape</c>).</summary>
+    public string HostRecord { get; init; } = "";
+    public Vector3 Origin { get; init; }
+    public float Yaw { get; init; }
+}
 
 /// <summary>The door's motion state as saved in <c>state&lt;i&gt;</c> (docs/game/locks.md "Doors"; not the DoorState enum): 0 closed, 1 open, 2 opening, 3 closing.</summary>
 public enum DoorMotion : byte { Closed = 0, Open = 1, Opening = 2, Closing = 3 }
@@ -131,6 +140,8 @@ public sealed class Fixture
 
     /// <summary>Cages: the functionality's <c>restrains movement</c> (pole, peeler). Cages and beds: <c>use range</c>, and who is in it.</summary>
     public bool Restrains { get; init; }
+    /// <summary>Cages: the functionality's <c>occupant selection</c>: pointing at the cage points at its occupant (docs/game/ui-input.md "Context menu verbs"); derived from the data.</summary>
+    public bool OccupantSelection { get; init; }
     /// <summary>Cages: the functionality's <c>animation</c>, <c>animation KO</c> and <c>animation dazed</c> clips, entry 0 of each (<c>UseableStuff::UseableStuff</c>, <b>Verified</b>); derived from the data.</summary>
     public CageClips Clips { get; init; }
     public float UseRange { get; init; }

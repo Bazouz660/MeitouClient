@@ -346,9 +346,14 @@ sealed partial class GameHost(GameInstall install, WorldScene scene, AssetLocato
         player.MeshHit = (id, origin, direction) => gpu.Characters?.RayHit(DrawKey(id), origin, direction);
         player.Floor = (() => viewedFloor, StepFloor);
         player.HiddenInWorld = hiddenIndoors.Contains;
+        player.AboveViewedFloor = AboveViewedFloor;
+        player.GroundItemShape = GroundShape;
+        player.GroundItemHidden = hiddenGround.Contains;
         player.BuildingMoveHit = (origin, direction, distance) => gpu.Objects?.MoveHit(origin, direction, viewedFloor, distance);
         player.SurfaceMoveHit = SurfaceMoveHit;
         player.ClosedBuildingHit = (origin, direction, distance) => gpu.Objects?.ClosedBuildingHit(origin, direction, distance);
+        player.ShownInteriorHit = (origin, direction, distance) => gpu.Objects?.ShownInteriorHit(origin, direction, distance);
+        player.DoorShape = (record, door) => nav?.Walkability.DoorGeometry?.Shape(record, door) ?? [];
         ConfigurePlayerInterface(player);
         if (IsSandbox) player.ReservedKeys.UnionWith([Meitou.Engine.Input.Key.Z, Meitou.Engine.Input.Key.X, Meitou.Engine.Input.Key.C, Meitou.Engine.Input.Key.Y, Meitou.Engine.Input.Key.P, Meitou.Engine.Input.Key.G]);
         player.ConfigureFrontend(scene.Database,
