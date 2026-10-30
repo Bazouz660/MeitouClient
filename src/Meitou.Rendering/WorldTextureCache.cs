@@ -121,6 +121,12 @@ public sealed unsafe class WorldTextureCache : IDisposable
 
     public List<string> Messages { get; } = [];
     public int PendingCount => pending.Count + (steps.Count > 0 ? 1 : 0);
+    /// <summary>
+    /// <see cref="PendingCount"/> without the coarser replacements, what a view waits for: a coarsening's finer image is drawn until it lands, so nothing is
+    /// missing. Over the cache's mark the governor coarsens a few textures at a time, and a town's loading screen waited 10 s for hundreds of them.
+    /// </summary>
+    public int AwaitedCount => pending.Count(t => !t.Replacing || t.Refine) + uploadsAwaited;
+    int uploadsAwaited;
     /// <summary>Recently used textures whose initial load is still deferred (e.g. by memory pressure).
     /// Includes the once-per-second range marking; unused deferred foliage textures do not hold up a scene.</summary>
     public int UnresidentUsedCount
@@ -652,8 +658,11 @@ public sealed unsafe class WorldTextureCache : IDisposable
 
     void QueueUpload(WorldTexture t, TextureData data)
     {
+        bool awaited = !t.Replacing || t.Refine;   // AwaitedCount
+        if (awaited) uploadsAwaited++;
         if (data.Compressed is not null) QueueCompressedUpload(t, data);
         else QueueUpload(t, data.Rgba, data.Swizzled, data);
+        if (awaited) steps.Enqueue(() => uploadsAwaited--);
     }
 
     /// <summary>The new image is about to replace the one the texture has (a reload with another number of top levels, <see cref="Rebalance"/>): the old

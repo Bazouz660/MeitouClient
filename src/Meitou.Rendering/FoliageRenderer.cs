@@ -251,7 +251,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     public List<string> Messages { get; } = [];
 
     /// <summary>Requested work: layouts, grass, meshes, textures and impostors, including used textures deferred by memory pressure.</summary>
-    public int Pending => runningWhole + runningFar + zonesWaiting + grassWaiting + decoding.Count + uploads.Count + lodRunning + lodWaiting + textures.PendingCount + textures.UnresidentUsedCount + zones.Values.Sum(z => z.GrassRunning) + ImpostorPending;
+    public int Pending => runningWhole + runningFar + zonesWaiting + grassWaiting + decoding.Count + uploads.Count + lodRunning + lodWaiting + textures.AwaitedCount + textures.UnresidentUsedCount + zones.Values.Sum(z => z.GrassRunning) + ImpostorPending;
 
     /// <summary>
     /// <see cref="Pending"/> as a loading screen waits for it: the grass only within the range the default grass distance gives (<see cref="DefaultGrassRange"/>). A longer
@@ -260,7 +260,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     public int LoadingPending => Pending - grassWaiting - zones.Values.Sum(z => z.GrassRunning) + grassNear;
 
     /// <summary>What <see cref="Pending"/> is made of, for the loading log.</summary>
-    public string PendingDetail => $"layouts {runningWhole + runningFar + zonesWaiting}, grass {grassWaiting + zones.Values.Sum(z => z.GrassRunning)}, meshes {decoding.Count} decoding {uploads.Count} upload steps, lods {lodRunning + lodWaiting}, textures {textures.PendingCount} loading {textures.UnresidentUsedCount} deferred, impostors {ImpostorPending}";
+    public string PendingDetail => $"layouts {runningWhole + runningFar + zonesWaiting}, grass {grassWaiting + zones.Values.Sum(z => z.GrassRunning)}, meshes {decoding.Count} decoding {uploads.Count} upload steps, lods {lodRunning + lodWaiting}, textures {textures.AwaitedCount} loading {textures.UnresidentUsedCount} deferred, impostors {ImpostorPending}";
 
     /// <summary>GPU memory held by foliage meshes, textures and grass pages.</summary>
     public long ResidentBytes => residentMeshBytes + textures.ResidentBytes + GrassBytes() + impostorBytes;

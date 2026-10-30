@@ -346,11 +346,11 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
         construction is { Count: > 0 } sites && !inst.Stand && sites.ContainsKey(inst.Placed.ParentPlacementId ?? inst.Placed.PlacementId);
 
     /// <summary>Requested work: zone layouts, meshes and textures, including used textures deferred by memory pressure.</summary>
-    public int Pending => streamer.Pending + meshes.Pending + uploads.Count + textureCache.PendingCount + textureCache.UnresidentUsedCount + unresolvedInRange + (landmarkTask is not null ? 1 : 0);
+    public int Pending => streamer.Pending + meshes.Pending + uploads.Count + textureCache.AwaitedCount + textureCache.UnresidentUsedCount + unresolvedInRange + (landmarkTask is not null ? 1 : 0);
 
     int unresolvedInRange;
     /// <summary>What <see cref="Pending"/> is made of, for the loading log.</summary>
-    public string PendingDetail => $"zones {streamer.Pending}, meshes {meshes.Pending}, uploads {uploads.Count}, textures {textureCache.PendingCount} loading {textureCache.UnresidentUsedCount} deferred, unresolved {unresolvedInRange}, landmarks {(landmarkTask is not null ? 1 : 0)}";
+    public string PendingDetail => $"zones {streamer.Pending}, meshes {meshes.Pending}, uploads {uploads.Count}, textures {textureCache.AwaitedCount} loading {textureCache.UnresidentUsedCount} deferred, unresolved {unresolvedInRange}, landmarks {(landmarkTask is not null ? 1 : 0)}";
     public List<string> Messages { get; } = [];
 
     /// <summary>A line about what is loaded, for the log.</summary>

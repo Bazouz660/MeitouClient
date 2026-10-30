@@ -134,12 +134,12 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             pendingLooks.Clear();
             foreach (var c in Draws.Items)
                 if (!assets.ContainsKey(c.Appearance)) pendingLooks.Add(c.Appearance);
-            return pendingLooks.Count + content.Textures.PendingCount + content.Textures.UnresidentUsedCount;
+            return pendingLooks.Count + content.Textures.AwaitedCount + content.Textures.UnresidentUsedCount;
         }
     }
     readonly HashSet<CharacterAppearance> pendingLooks = new(ReferenceEqualityComparer.Instance);
     /// <summary>Current appearances still being prepared/uploaded, or textures still being loaded. Failed assets count as finished.</summary>
-    public bool ContentPending => Draws.Items.Any(c => !Deferred(c) && !assets.ContainsKey(c.Appearance)) || content.Textures.PendingCount > 0 || content.Textures.UnresidentUsedCount > 0;
+    public bool ContentPending => Draws.Items.Any(c => !Deferred(c) && !assets.ContainsKey(c.Appearance)) || content.Textures.AwaitedCount > 0 || content.Textures.UnresidentUsedCount > 0;
 
     /// <summary>
     /// While set (a game's loading screen): only the characters within <see cref="LoadingReach"/> of this point (x, z) are prepared and counted by <see cref="ContentPending"/>; the
