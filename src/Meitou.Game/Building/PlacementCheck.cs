@@ -32,8 +32,6 @@ public sealed class PlacementServices
     public float WaterLevel { get; init; } = 98;
     /// <summary>A BUILDING's collision footprint; null while it is read, or when it has none.</summary>
     public required Func<string, BuildingFootprint?> Footprint { get; init; }
-    /// <summary>A BUILDING's collision footprint, read now if it was not yet; null when it has none.</summary>
-    public Func<string, BuildingFootprint?> FootprintNow { get; init; } = _ => null;
     /// <summary>The level data's buildings round a point (X, Z) within a radius, with their footprints in the world (those read so far).</summary>
     public required Func<Vector2, float, IEnumerable<PlacedFootprint>> StaticAround { get; init; }
     /// <summary>The level data's pickable buildings along a ray (origin, direction, length) with their record footprints; empty without level data.</summary>

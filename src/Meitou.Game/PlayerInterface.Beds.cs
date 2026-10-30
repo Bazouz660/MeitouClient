@@ -21,19 +21,16 @@ sealed partial class PlayerInterface
     /// <summary>
     /// The bed under the pixel with the ray distance, when not hidden behind a wall nor above the viewed floor of the building the player is in (<see cref="AboveViewedFloor"/>): the
     /// nearest the ray meets on its record's collision (hull prism, then triangles), as a building is picked; else the bed without a footprint whose middle (half a unit above its spot)
-    /// projects nearest the pixel within <see cref="BedPickPixels"/>. The collision is read now if it was not yet (all at once, on workers).
+    /// projects nearest the pixel within <see cref="BedPickPixels"/>. Until its collision is read (on workers) the magnet stands in.
     /// </summary>
     (BedSpot Bed, float T)? PickBedAt(Vector2 pixel)
     {
         if (Ray(pixel) is not { } ray) return null;
         (BedSpot, float)? hit = null, near = null;
         float bestT = float.MaxValue, bestPixels = BedPickPixels;
-        var beds = session.CurrentSnapshot.Beds;
-        if (buildHost?.Placement is { } placement)
-            foreach (var b in beds) placement.Footprint(b.Record);   // starts the reads not made yet
-        foreach (var b in beds)
+        foreach (var b in session.CurrentSnapshot.Beds)
         {
-            if (buildHost?.Placement.FootprintNow(b.Record) is { } footprint)
+            if (buildHost?.Placement.Footprint(b.Record) is { } footprint)
             {
                 var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, b.Yaw);
                 if (BuildingRayT(ray, footprint.Place(b.Position, yaw), footprint.YMin, footprint.YMax, b.Record, b.Position, b.Position.Y, yaw) is { } t && t < bestT && AboveViewedFloor?.Invoke(b.Position) != true && !Hidden(ray, t))

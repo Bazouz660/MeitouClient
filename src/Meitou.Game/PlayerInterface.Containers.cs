@@ -17,18 +17,17 @@ sealed partial class PlayerInterface
     /// <summary>
     /// The container under the pixel with the ray distance, when not hidden behind a wall: the nearest the ray meets on its record's collision (hull prism, then triangles), as a building is
     /// picked (docs/game/ui-input.md "Building picking and selection"); one without collision, or above the shown floor of the building the player is in, cannot be picked. The
-    /// collision is read now if it was not yet (all at once, on workers).
+    /// collision is read on workers; until then it is not picked.
     /// </summary>
     (ContainerSpot Container, float T)? PickContainerAt(Vector2 pixel)
     {
         if (Ray(pixel) is not { } ray || buildHost?.Placement is not { } placement) return null;
         var containers = session.CurrentSnapshot.Containers;
-        foreach (var c in containers) placement.Footprint(c.Record);   // starts the reads not made yet
         (ContainerSpot, float)? hit = null;
         float bestT = float.MaxValue;
         foreach (var c in containers)
         {
-            if (placement.FootprintNow(c.Record) is not { } footprint) continue;
+            if (placement.Footprint(c.Record) is not { } footprint) continue;
             var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, c.Yaw);
             if (BuildingRayT(ray, footprint.Place(c.Position, yaw), footprint.YMin, footprint.YMax, c.Record, c.Position, c.Position.Y, yaw) is { } t && t < bestT && AboveViewedFloor?.Invoke(c.Position) != true && !Hidden(ray, t))
                 (hit, bestT) = ((c, t), t);

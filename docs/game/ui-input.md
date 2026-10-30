@@ -344,7 +344,7 @@ interior-mask hulls); the hits are sorted nearest first (**Verified**, comparato
 | 2, 6, 14 (terrain, foliage) | ground: ends the walk |
 | 0, 1, 3, 4 (characters, ragdolls) | that character if visible (`FUN_1407fb410`); behind an already taken building only when the building hit was a passable part (23..26) |
 | 3, 4, 28..31 with an item object | that item if visible (`FUN_1407fc440`); behind a taken building only when inside the building's bounding box |
-| 5 (doors) | the door; when a building was taken first, that building |
+| 5 (doors) | the door, by its collision (group 5, on the door's own node, [collision](../formats/collision.md#placement-and-groups)); it ends the walk with no visibility or floor test of its own (**Verified**, decompile: the group-5 arm takes the hit's object, `FUN_1409f8f20`, and stops). When a building was taken first, that building. Meitou: a 40 px magnet round the leaf's centre (`PickDoorAt`), not its collision |
 | 9..12, 15..31 (building parts) | building candidate, rules below |
 
 - A building must be visible (**Verified**, `FUN_140800250`, `FUN_140547140`): its flag (+0x19d) is set, and its floor (+0xa4) is not above
@@ -356,7 +356,7 @@ interior-mask hulls); the hits are sorted nearest first (**Verified**, comparato
   the flag's own test against the current floor in a building left within 10 s (Meitou shows every floor then) and the player's whole-shown interior exception.
 - Characters and ground items on a hidden floor are not visible either (**Verified**, decompile): a character in a building above the floor it shows (`FUN_1405c9f60`); a ground
   item above floor 0 above the floor its building shows, or above the current floor outside one (`FUN_1409fb540`, after each floor change in `FUN_1407f7230`). Meitou: neither
-  drawn nor picked above the viewed floor of a building in the interior view (characters `GameHost.hiddenIndoors`; items `WorldObjectRenderer.StandsAbove`, `GameHost.hiddenGround`), a
+  drawn nor picked above the viewed floor of a building in the interior view (characters `GameHost.hiddenIndoors`; items `GameHost.hiddenGround`, which the renderer takes as its `HiddenItems`), a
   ground item's floor from where it is drawn.
 - Parts of a building with an interior (`FUN_140291650`) count only when their floor is not above the floor that building shows; the floor of a
   hit comes from its group (`FUN_1409b1850`: 10/16/20/24/29 → 1, 11/17/21/25/30 → 2, 12/18/22/26/31 → 3, 27 roof → 4, else 0). So with a

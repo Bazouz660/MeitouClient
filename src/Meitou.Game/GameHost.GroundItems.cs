@@ -32,13 +32,14 @@ sealed partial class GameHost
             restLimbs.Remove(id);
             groundPoses.Remove(id);
             hiddenGround.Remove(id);
+            hiddenGroundKeys.Remove(GroundId(id));
             groundFloors.Remove(id);
         }
         foreach (var g in snapshot.GroundItems)
         {
             if (!shownGround.Add(g.Id)) continue;
             var (rotation, y) = g.Dropped ? LaidFlat(g) : (g.Rotation, g.Position.Y);
-            groundPoses[g.Id] = (new Vector3(g.Position.X, y, g.Position.Z), rotation);
+            groundPoses[g.Id] = (new Vector3(g.Position.X, y, g.Position.Z), rotation, GroundId(g.Id));
             if (LimbLookOf(g.Record) is not null)
             {
                 // A severed limb is drawn by the debris renderer (its SeveredLimb look: skin tone and blood), falling and at rest.
@@ -57,9 +58,12 @@ sealed partial class GameHost
 
     /// <summary>
     /// The ground items above the shown floor of a building in the interior view (game: <c>FUN_1409fb540</c>, as a character there): not picked and without a label; the renderer leaves
-    /// their placements out (<c>WorldObjectRenderer.StandsAbove</c>), a limb's debris is left out here.
+    /// their placements out by <see cref="hiddenGroundKeys"/>, a limb's debris is left out here.
     /// </summary>
     readonly HashSet<int> hiddenGround = [];
+
+    /// <summary>The placement keys of <see cref="hiddenGround"/>, the renderer's <c>WorldObjectRenderer.HiddenItems</c>: drawing and picking share one answer.</summary>
+    readonly HashSet<string> hiddenGroundKeys = [];
 
     /// <summary>By ground item, the building in the view it was last found in, where it was drawn then and the floor it lies on there (<see cref="UpdateGroundVisibility"/>).</summary>
     readonly Dictionary<int, (InteriorVolume Building, Vector3 At, int Floor)> groundFloors = [];
@@ -71,6 +75,7 @@ sealed partial class GameHost
     void UpdateGroundVisibility()
     {
         hiddenGround.Clear();
+        hiddenGroundKeys.Clear();
         foreach (var (id, pose) in groundPoses)
         {
             if (ViewedAt(pose.At) is not { } inView) continue;
@@ -78,12 +83,12 @@ sealed partial class GameHost
             if (shown >= 3) continue;
             if (!groundFloors.TryGetValue(id, out var known) || !ReferenceEquals(known.Building, inView) || known.At != pose.At)
                 groundFloors[id] = known = (inView, pose.At, inView.FloorAt(pose.At));
-            if (known.Floor > shown) hiddenGround.Add(id);
+            if (known.Floor > shown && hiddenGround.Add(id)) hiddenGroundKeys.Add(pose.Key);
         }
     }
 
     /// <summary>Where each shown ground item is drawn (a falling limb: where it comes to rest), for <see cref="GroundShape"/>.</summary>
-    readonly Dictionary<int, (Vector3 At, Quaternion Rotation)> groundPoses = [];
+    readonly Dictionary<int, (Vector3 At, Quaternion Rotation, string Key)> groundPoses = [];
     readonly Dictionary<(string Record, bool File), IReadOnlyList<(Vector3[] Vertices, int[] Indices)>> groundShapes = [];
 
     /// <summary>
@@ -96,7 +101,11 @@ sealed partial class GameHost
         if (!groundPoses.TryGetValue(g.Id, out var pose) || GroundCollisionOf(g.Record) is not { } collision) return null;
         bool file = collision.Xml is not null && (collision.Weapon || g.Fall is not null);
         if (!groundShapes.TryGetValue((g.Record, file), out var mesh))
-            groundShapes[(g.Record, file)] = mesh = file ? player.BuildHost?.Placement.CollisionFile(collision.Xml!) ?? [] : BoundsOf(g.Record) is { } box ? Box(box.Min, box.Max) : [];
+        {
+            mesh = file ? player.BuildHost?.Placement.CollisionFile(collision.Xml!) ?? [] : [];
+            if (mesh.Count == 0 && BoundsOf(g.Record) is { } box) mesh = Box(box.Min, box.Max);   // engine choice: a collision file missing from the install falls back to the box
+            groundShapes[(g.Record, file)] = mesh;
+        }
         return mesh.Count == 0 ? null : (mesh, pose.At, pose.Rotation);
     }
 
@@ -200,6 +209,7 @@ sealed partial class GameHost
         restLimbs.Clear();
         groundPoses.Clear();
         hiddenGround.Clear();
+        hiddenGroundKeys.Clear();
         groundFloors.Clear();
         groundRevision = -1;
     }

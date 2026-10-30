@@ -18,12 +18,11 @@ sealed partial class PlayerInterface
     {
         if (Ray(pixel) is not { } ray || buildHost?.Placement is not { } placement) return null;
         var cages = session.CurrentSnapshot.Cages;
-        foreach (var c in cages) placement.Footprint(c.Record);   // starts the reads not made yet
         (CageSpot, float)? hit = null;
         float bestT = float.MaxValue;
         foreach (var c in cages)
         {
-            if (placement.FootprintNow(c.Record) is not { } footprint) continue;
+            if (placement.Footprint(c.Record) is not { } footprint) continue;
             var yaw = Quaternion.CreateFromAxisAngle(Vector3.UnitY, c.Yaw);
             if (BuildingRayT(ray, footprint.Place(c.Position, yaw), footprint.YMin, footprint.YMax, c.Record, c.Position, c.Position.Y, yaw) is { } t && t < bestT && AboveViewedFloor?.Invoke(c.Position) != true && !Hidden(ray, t))
                 (hit, bestT) = ((c, t), t);

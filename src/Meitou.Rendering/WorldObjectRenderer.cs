@@ -712,6 +712,9 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// </summary>
     public IReadOnlyDictionary<string, int> InteriorView { get; set; } = new Dictionary<string, int>();
 
+    /// <summary>The loose items (placement ids) above the shown floor of their building in the interior view: not drawn. Set by the game, which picks by the same answer.</summary>
+    public IReadOnlySet<string> HiddenItems { get; set; } = new HashSet<string>();
+
     /// <summary>The nearest loaded building's movement destination, using collision up to the viewed floor, before the terrain.</summary>
     public Vector3? MoveHit(Vector3 origin, Vector3 direction, int floor, float maxDistance) => FloorHit(origin, direction, floor, maxDistance)?.Position;
 
@@ -785,13 +788,15 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     }
 
     /// <summary>
-    /// Whether a building of its own (a turret on a wall, furniture the player placed) or an item lying loose stands above the viewed floor of a building in the interior view, by
-    /// where it stands in that building's hull: it is hidden with that floor (game: furniture by FUN_140547140 / FUN_14054a8f0, loose items by FUN_1409fb540, as the host does for characters).
+    /// Whether a building of its own (a turret on a wall, furniture the player placed) stands above the viewed floor of a building in the interior view, by
+    /// where it stands in that building's hull: it is hidden with that floor (game: FUN_140547140 / FUN_14054a8f0, as the host does for characters). A loose item: the game's answer
+    /// (<see cref="HiddenItems"/>, FUN_1409fb540).
     /// </summary>
     bool StandsAbove(ObjectStreamer.Instance inst)
     {
         var p = inst.Placed;
-        if (InteriorView.Count == 0 || AllFloors || p.Kind is not (PlacedKind.BuildingPart or PlacedKind.Item) || p.ParentPlacementId is not null || InteriorView.ContainsKey(p.PlacementId)) return false;
+        if (p.Kind == PlacedKind.Item) return !AllFloors && HiddenItems.Contains(p.PlacementId);
+        if (InteriorView.Count == 0 || AllFloors || p.Kind != PlacedKind.BuildingPart || p.ParentPlacementId is not null || InteriorView.ContainsKey(p.PlacementId)) return false;
         var answer = InteriorOf(inst);
         return answer.Building is { } building && InteriorView.TryGetValue(building, out int floor) && answer.Floor > floor;
     }
