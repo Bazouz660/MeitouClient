@@ -83,11 +83,28 @@ public sealed partial class MedicalState
         {
             // The original's flag (medical +0x160) is only set by the medical tick: before the first one (KO point not yet known) nobody is crippled, where a KO point of 0
             // would ground anyone with a leg merely below 0 (between 0 and the KO point a leg only limps).
-            if (Incapacitated || !HasStatsObject || !legKoKnown) return false;
+            return !Incapacitated && LegsDown;
+        }
+    }
+
+    /// <summary>A leg is down by <see cref="HealthPart.LegDown"/> whether or not the character is conscious (the original's flag +0x160 is set by the tick either way); needs the KO point known.</summary>
+    bool LegsDown
+    {
+        get
+        {
+            if (!HasStatsObject || !legKoKnown) return false;
             foreach (var p in parts) if (p.IsLeg && p.LegDown(LegKoPoint)) return true;
             return false;
         }
     }
+
+    /// <summary>
+    /// Set by <see cref="Tick"/> on the update that finds a leg down where the last one did not (the original's first set of the crippled flag, which calls <c>FUN_1405c8330</c>:
+    /// the character stops and its orders and tasks are cleared, docs/game/ragdolls.md "Forced crawl"); <see cref="BodySystem"/> takes it in a serial phase. The first tick after a
+    /// load only learns the state. Not saved.
+    /// </summary>
+    public bool CollapseOnset { get; set; }
+    int legsWereDown = -1;
 
     /// <summary>
     /// The planner's <c>myLegsAreMessedUp</c> (state 103, <c>FUN_1409980c0</c>, docs/game/ai-tasks.md "Planner states"): false when a leg is a stump (the limb-state table's legs, <c>FUN_14002a6e9</c>);

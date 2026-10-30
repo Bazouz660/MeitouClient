@@ -429,6 +429,7 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
         var table = world.Characters;
         for (int i = 0; i < table.HighWater; i++)
         {
+            if (table.Next[i].Alive && table.Cold(i) is { Medical.CollapseOnset: true } collapsed) Collapse(world, i, collapsed);
             if (table.Next[i].Alive && table.Cold(i) is { Burst: { } blow } burst) Burst(world, i, burst, blow);
             else if (table.Next[i].Alive && table.Cold(i) is { DiedTick: >= 0 } cold)
             {
@@ -447,6 +448,23 @@ public sealed class BodySystem(GameConstants constants, BodyOptions? options = n
                 table.Remove(corpse);
             }
         }
+    }
+
+    /// <summary>
+    /// The first tick a leg is down (<see cref="MedicalState.CollapseOnset"/>): <c>FUN_1405c8330</c> stops the character and clears its orders and tasks (<b>Observed</b>, docs/game/ragdolls.md
+    /// "Forced crawl"), so the running task and fight end (<see cref="TaskStart.End"/>, which asks for a new decision; an NPC's AI picks again from idle), and the queued orders go. Not for one
+    /// carried or in a bed or cage (the original tests both), nor while its current task is Stumbling (147), Getting up (65) or Standing (28; Meitou has no such task: Stand Up is at once),
+    /// which the original's current-task test spares. Runs in the serial slow world, the tick the medical tick set it (the update itself is parallel).
+    /// </summary>
+    static void Collapse(World world, int slot, CharacterCold cold)
+    {
+        cold.Medical!.CollapseOnset = false;
+        var table = world.Characters;
+        long now = world.Tick;
+        bool stumbling = cold.StaggeredUntil > now;
+        if (cold.InSomething != Locks.HeldState.None || !cold.CarriedBy.IsNone || stumbling || CharacterFacts.GettingUp(cold, now)) return;
+        cold.OrderQueue.Clear();
+        TaskStart.End(world, slot, TaskEnd.Stopped);
     }
 
     /// <summary>Game hours after death before flies come (<c>FUN_1405ccd90</c>, <b>Verified</b> literal).</summary>

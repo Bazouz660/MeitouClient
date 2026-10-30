@@ -68,6 +68,32 @@ public class OrderQueueTests
     }
 
     /// <summary>
+    /// The first tick a leg is down the character stops and its orders and tasks are cleared (<c>FUN_1405c8330</c> from <c>FUN_140649320</c>, docs/game/ragdolls.md "Forced crawl"): a
+    /// walking character with a Shift-queued Rest stands, idle, with an empty queue, and a character already stumbling keeps its task. Catches a crawler that walks on to its order.
+    /// </summary>
+    [Fact]
+    public void A_leg_that_gives_out_stops_the_character_and_clears_its_orders_unless_it_stumbles()
+    {
+        foreach (bool stumbling in new[] { false, true })
+        {
+            using var rig = new TaskStartTests.Rig(carrying: false);
+            rig.World.RunTicks(3);
+            var f = rig.Fighter;
+            rig.Say(new MoveOrder([f], new Vector3(1000, 0, 1960)) { Tick = rig.World.Tick });
+            rig.Say(new RestOrder([f]) { Tick = rig.World.Tick, Queued = true });
+            rig.World.RunTicks(3);
+            Assert.Equal(CharacterTask.GoTo, rig.Task(f));
+            var leg = rig.Cold(f).Medical!.Parts[RLeg];
+            leg.Flesh = -leg.MaxHp * 0.5f;   // past the KO point, short of cut off
+            if (stumbling) rig.Cold(f).StaggeredUntil = rig.World.Tick + 100;
+            rig.World.RunTicks(2);
+            Assert.True(rig.Cold(f).Medical!.Crawling);
+            Assert.Equal(stumbling, rig.Cold(f).OrderQueue.Count > 0);
+            Assert.Equal(stumbling ? CharacterTask.GoTo : CharacterTask.Idle, rig.Task(f));
+        }
+    }
+
+    /// <summary>
     /// A player order that fails to plan stays queued and the chooser goes on (docs/game/ai-tasks.md "Precedence"): a First Aid order with no medkit waits while the character's job (operating
     /// the well) runs, and starts once a kit is back. Catches a refused order being dropped, or one that blocks the character's jobs.
     /// </summary>
