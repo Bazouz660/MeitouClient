@@ -365,6 +365,10 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
 
     /// <summary>Render-thread time per frame spent on uploads and resolving.</summary>
     public double BudgetMs { get; set; } = 2;
+    /// <summary>The view is under the loading screen (the host sets it each frame): its frames need not be smooth, so uploads and resolving take up to
+    /// <see cref="CoveredBudgetMs"/> a frame instead of <see cref="BudgetMs"/>.</summary>
+    public bool Covered { get; set; }
+    const double CoveredBudgetMs = 16;
 
     /// <summary>Follows the eye: lays out zones and loads meshes and textures around it, within <see cref="BudgetMs"/> of render-thread time.</summary>
     /// <summary>The arrival eye of a character flight (<see cref="ObjectStreamer.Ahead"/>): its objects are laid out, loaded and kept, their meshes and textures as fine
@@ -378,7 +382,7 @@ public sealed unsafe partial class WorldObjectRenderer : IDisposable
     /// <summary>Points kept loaded besides the eye's (<see cref="ObjectStreamer.Kept"/>).</summary>
     public IReadOnlyList<Vector3> Kept { get => streamer.Kept; set => streamer.Kept = value; }
 
-    public void Update(Vector3 eye) => Update(eye, BudgetMs);
+    public void Update(Vector3 eye) => Update(eye, Covered ? Math.Max(BudgetMs, CoveredBudgetMs) : BudgetMs);
 
     /// <summary>Colour draws of parts whose diffuse map was not resident (drawn grey) and, at the same moment, textures waiting for a finer image,
     /// the largest of each since <see cref="TakePopStats"/> (the benchmark's pop-in lines).</summary>

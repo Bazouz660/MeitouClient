@@ -103,6 +103,13 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
     public bool DrawMeshes { get; set; } = true;
     /// <summary>Zone layouts in flight: whole ones and far-only ones, each limited to <see cref="workers"/> at a time.</summary>
     int runningWhole, runningFar;
+    /// <summary>
+    /// The view is under the loading screen (the host sets it each frame): its frames need not be smooth, so layouts run on every streaming thread
+    /// (<see cref="BackgroundWork.Threads"/>, not <see cref="workers"/>) and uploads take up to <see cref="CoveredBudgetMs"/> a frame. A town's thousands of
+    /// zones out to the Meitou range, three at a time, held its loading screen up seconds with the workers idle.
+    /// </summary>
+    public bool Covered { get; set; }
+    const double CoveredBudgetMs = 16;
 
     public FoliageRenderer(IGpuContext gpu, GameInstall install, GameDatabase db, WorldLevelData levels, AssetLocator assets)
     {
@@ -426,7 +433,8 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         updates++;
         var watch = Stopwatch.StartNew();
         // Uploads get 2 ms a frame (texture decodes are never waited for) except while settling for a screenshot.
-        double budget = settling ? 1e9 : 2.0;
+        double budget = settling ? 1e9 : Covered ? CoveredBudgetMs : 2.0;
+        int layouts = Covered ? Math.Max(workers, BackgroundWork.Threads) : workers;
         // Two tiers (docs/render-foliage.md): within the near reach (the MEDIUM layers and the grass) a zone is laid out whole; beyond it, out
         // to the far reach, only its FAR layers, which skips the grass coverage, nine tenths of a zone's layout. A far zone is laid out whole once
         // it comes within the near reach (its far instances are the same either way, FoliageLayout.Place).
@@ -508,7 +516,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         {
             if (guard is { Streaming: false }) break;   // memory pressure: no new layout is started
             bool whole = tier != Tier.Far;   // a Meshes layout is a whole one whose far-away groups are left out (Accept)
-            if (whole ? runningWhole >= workers : runningFar >= workers) continue;
+            if (whole ? runningWhole >= layouts : runningFar >= layouts) continue;
             if (!zones.TryGetValue(zone, out var state))
             {
                 var (x0, z0) = WorldLayout.ZoneOrigin(zone);
@@ -543,7 +551,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         PumpLods();
         Prune();
         TrimResident(eye, force: settling);
-        textures.Pump(wait: settling, max: settling ? 64 : 1);
+        textures.Pump(wait: settling, max: settling ? 64 : Covered ? 8 : 1);
         // The budget counts from here: the work above can take it all on a slower machine, and the uploads would then never run.
         int ranSteps = 0;
         double uploadStart = watch.Elapsed.TotalMilliseconds;
@@ -765,10 +773,12 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
 
     /// <summary>The highest "Grass density x" the pages are generated for (the settings slider's top): lower settings draw a prefix of the blades.</summary>
     public const float MaxGrassDensity = 2f;
-    /// <summary>Grass pages generating at once, over all zones.</summary>
+    /// <summary>Grass pages generating at once, over all zones; under the loading screen (<see cref="Covered"/>) enough to keep every streaming thread busy between two
+    /// frames (a page takes a millisecond or two, and finished ones are only collected once a frame).</summary>
     const int MaxGrassJobs = 12;
+    static readonly int CoveredGrassJobs = Math.Max(MaxGrassJobs, 4 * BackgroundWork.Threads);
     readonly List<(float Distance, ZoneState State, int Key)> grassWanted = [];
-    readonly (float Distance, ZoneState State, int Key)[] grassPicks = new (float, ZoneState, int)[MaxGrassJobs];
+    readonly (float Distance, ZoneState State, int Key)[] grassPicks = new (float, ZoneState, int)[CoveredGrassJobs];
     int zonesWaiting, grassWaiting, grassNear;
 
     void UpdateGrass(Vector3 eye)
@@ -823,7 +833,7 @@ public sealed unsafe partial class FoliageRenderer : IDisposable
         // so changing the setting never regenerates them (Draw shows a prefix). Only the nearest free jobs' worth is picked: sorting every
         // missing page (tens of thousands at a long grass range) took milliseconds a frame.
         grassWaiting = grassWanted.Count;
-        int free = guard is { Streaming: false } ? 0 : Math.Max(0, MaxGrassJobs - inFlight), picked = 0;
+        int free = guard is { Streaming: false } ? 0 : Math.Max(0, (Covered ? CoveredGrassJobs : MaxGrassJobs) - inFlight), picked = 0;
         foreach (var wanted in grassWanted)
         {
             if (picked == free && (free == 0 || wanted.Distance >= grassPicks[picked - 1].Distance)) continue;

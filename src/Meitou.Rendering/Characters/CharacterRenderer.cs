@@ -51,6 +51,12 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
     /// race rig), and four of them in one frame of a town filling up held it 150 ms (docs/bench.md "Play benchmark").
     /// </summary>
     public const double BuildBudgetMs = 4;
+    /// <summary>
+    /// The view is under the loading screen (the host sets it each frame): its frames need not be smooth, so textures upload and appearances build for up to
+    /// <see cref="CoveredBudgetMs"/> a frame instead of the play budgets, whose trickle of texture uploads held a town's loading screen up 10 s.
+    /// </summary>
+    public bool Covered { get; set; }
+    const double CoveredBudgetMs = 16;
     /// <summary>Ogre's camera LOD bias as a distance factor (above 1: coarser levels sooner).</summary>
     public float LodBias { get; set; } = 1;
     /// <summary>Further factor on the LOD value in the shadow cascades (a shadow hides detail: coarser levels sooner).</summary>
@@ -394,7 +400,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
         Source?.Invoke(Draws);
         StageClock.Part(StageClock.PartFill);
         GatherPortraitKeys();
-        content.Textures.Pump(wait: LoadBudget == 0, max: 8, budgetMs: 1.0);
+        content.Textures.Pump(wait: LoadBudget == 0, max: Covered ? 64 : 8, budgetMs: Covered ? CoveredBudgetMs : 1.0);
         StageClock.Part(StageClock.PartTextures);
         textureBias = Gpu.LodBias;
         textureStandIn = Gpu.StandIn2D;
@@ -413,7 +419,7 @@ internal sealed unsafe partial class CharacterRenderer : IDisposable
             {
                 if (Deferred(inst)) continue;
                 // Interactive: the files are read and the meshes prepared on a worker first (CharacterContent.Fetched), then a few a frame are uploaded.
-                if (LoadBudget > 0 && (!content.Fetched(inst.Appearance) || built >= LoadBudget || buildMs >= BuildBudgetMs)) continue;
+                if (LoadBudget > 0 && (!content.Fetched(inst.Appearance) || !Covered && built >= LoadBudget || buildMs >= (Covered ? CoveredBudgetMs : BuildBudgetMs))) continue;
                 long buildStart = Stopwatch.GetTimestamp();
                 asset = content.Build(inst.Appearance);
                 buildMs += Stopwatch.GetElapsedTime(buildStart).TotalMilliseconds;
