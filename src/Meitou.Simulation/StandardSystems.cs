@@ -73,6 +73,8 @@ public sealed class StandardSystemOptions
     public Meitou.Simulation.Kidnap.CaptiveSettings? Captives { get; init; }
     public Meitou.Simulation.Trading.TradeSettings? Trade { get; init; }
     public Meitou.Simulation.Ai.AiSettings? Ai { get; init; }
+    /// <summary>Squads in a fight run when they are not intact (<see cref="FleeSystem.SquadBreak"/>; off, as the game does).</summary>
+    public bool SquadBreak { get; init; }
     public Meitou.Simulation.Construction.ConstructionSettings? Construction { get; init; }
     public Meitou.Simulation.Production.ProductionSettings? Production { get; init; }
     /// <summary>The rigs the characters are drawn with: given, the physics ragdolls run (after the animation); null, the fall and lying clips stand in for them.</summary>
@@ -224,7 +226,7 @@ public static class StandardSystems
         // Without the Aggro part a fight still reads the senses (target choice, threats, the fight's end): the look keeps them, and nothing else.
         else if (combat is not null) systems.Add(new AggroSystem(data.Relations, (o.Aggro ?? new AggroSettings()) with { AttackOnSight = false }) { Combat = combat, Towns = data, Population = population });
         if (carry is not null) carry.Aggro = aggro;
-        if (Has(StandardParts.Flee)) systems.Add(new FleeSystem(data.Relations, combat!, o.Aggro?.SightRange ?? AggroSystem.OutdoorSight));
+        if (Has(StandardParts.Flee)) systems.Add(new FleeSystem(data.Relations, combat!, o.Aggro?.SightRange ?? AggroSystem.OutdoorSight) { SquadBreak = o.SquadBreak });
         Meitou.Simulation.Crime.CrimeSystem? crime = null;
         Meitou.Simulation.Crime.ArrestSystem? arrest = null;
         Meitou.Simulation.Locks.LockSystem? locks = null;

@@ -74,9 +74,17 @@ public class AggroTests
             return squad;
         }
 
-        Squad SquadOf(int faction, Vector2 home, bool idle, int platoon, (Vector2 At, float Yaw)[] members)
+        /// <summary>A town's own squad that holds <paramref name="own"/> as its home, with the board the AI would give it (the AI is not run here).</summary>
+        public Squad TownSquadOf(int faction, Vector2 home, Meitou.Data.World.TownBuilding own, params (Vector2 At, float Yaw)[] members)
         {
-            var squad = new Squad { Id = World.Squads.NextId(), TemplateId = "t", Faction = faction, HomeCentre = home, HomeRadius = 30, PlatoonId = platoon };
+            var squad = SquadOf(faction, home, true, -1, members, town: 0);
+            squad.Ai = new Meitou.Simulation.Ai.Blackboard([]) { OwnHome = own };
+            return squad;
+        }
+
+        Squad SquadOf(int faction, Vector2 home, bool idle, int platoon, (Vector2 At, float Yaw)[] members, int town = -1)
+        {
+            var squad = new Squad { Id = World.Squads.NextId(), TemplateId = "t", Faction = faction, HomeCentre = home, HomeRadius = 30, PlatoonId = platoon, Town = town };
             World.Squads.Add(squad);
             foreach (var (p, yaw) in members)
             {
@@ -119,7 +127,7 @@ public class AggroTests
     /// The arena; <paramref name="ai"/> adds the AI (first, as the standard order has it), which runs the squads given goal lists (<see cref="Lists"/>); <paramref name="flee"/> adds the flee step
     /// after the looks and gives the AI the threats (Self preservation).
     /// </summary>
-    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, ITickSystem? extra = null, bool ai = false, bool flee = false,
+    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, ITickSystem? extra = null, bool ai = false, bool flee = false, bool? squadBreak = null,
         GameDatabase? db = null, AiSettings? think = null)
     {
         relations ??= Relations();
@@ -131,7 +139,7 @@ public class AggroTests
         var aggro = new AggroSystem(relations, settings ?? new AggroSettings { RecordLog = true });
         var walk = new OpenGroundWalkability((_, _) => 150);
         ITickSystem[] mind = ai ? [new AiSystem(new PopulationData { Db = db ?? new GameDatabase(), Sites = [], Factions = [], Relations = relations }, think) { ThreatSource = flee ? combat : null }] : [];
-        ITickSystem[] run = flee ? [new FleeSystem(relations, combat)] : [];
+        ITickSystem[] run = flee ? [squadBreak is { } on ? new FleeSystem(relations, combat) { SquadBreak = on } : new FleeSystem(relations, combat)] : [];
         var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = false, MinPartitionSize = 1 }, walk,
             [.. mind, new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro, .. run, .. extra is null ? Array.Empty<ITickSystem>() : [extra]]);
         return new Arena(world, combat, aggro, relations);
@@ -733,7 +741,7 @@ public class AggroTests
     [Fact]
     public void A_squad_member_running_after_its_leader_fell_is_shown_as_running_away()
     {
-        using var a = Make(31, 1, TownRelations(), ai: true, flee: true);
+        using var a = Make(31, 1, TownRelations(), ai: true, flee: true, squadBreak: true);
         a.Aggro.Combat = a.Combat;
         var o = new Vector2(2000, 2000);
         var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
@@ -750,6 +758,56 @@ public class AggroTests
         Assert.True(cold.Fleeing && !cold.FleesAlone, "the broken squad's member runs");
         a.World.RunTicks(3);
         Assert.Equal("Running away", Meitou.Simulation.Ai.AiSystem.ActivityText(table.Next[member.Slot], cold));
+    }
+
+    /// <summary>
+    /// The original runs no squad for being broken (docs/game/perception.md "Squad not intact": only a package with the retreat signal acts on it, and no squad template lists one): by default
+    /// the member of a squad of two whose leader is knocked out keeps fighting. Catches every broken squad running.
+    /// </summary>
+    [Fact]
+    public void A_broken_squad_does_not_run_unless_the_option_is_on()
+    {
+        using var a = Make(31, 1, TownRelations(), ai: true, flee: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId leader = squad.Leader, member = squad.Members.First(m => m != squad.Leader);
+        Lists(squad, [], [Goal(TaskType.ATTACK_ENEMIES)]);
+        Think(a);
+        a.SquadOf(Bandits, o, true, (o + new Vector2(5, 100), MathF.PI));
+        var table = a.World.Characters;
+        for (int k = 0; k < (int)(6 / a.World.TickSeconds) && !a.Fighting(member); k++) a.World.RunTicks(1);
+        Assert.True(a.Fighting(member), "the member attacks the bandit");
+        table.Cold(leader.Slot)!.Medical!.KnockOut(1000);
+        a.World.RunTicks(4 * 15);
+        Assert.False(table.Cold(member.Slot)!.Fleeing, "no squad runs for being broken");
+        Assert.Equal(0, a.World.Systems.OfType<FleeSystem>().Single().Broken);
+    }
+
+    /// <summary>
+    /// A small town squad with its own building holds while anyone is able (the persistent-with-home rule of <c>FUN_14079acf0</c>, the same test as the AI's intact flag): with the leader knocked
+    /// out, its member does not run, where the same squad without a home does. Catches the flee trigger passing no home.
+    /// </summary>
+    [Fact]
+    public void A_town_squad_with_its_own_home_holds_when_its_leader_falls()
+    {
+        foreach (bool home in new[] { false, true })
+        {
+            using var a = Make(41, 1, TownRelations(), flee: true, squadBreak: true);
+            a.Aggro.Combat = a.Combat;
+            var o = new Vector2(2000, 2000);
+            var building = new Meitou.Data.World.TownBuilding("b", "b", "House", new Vector3(o.X, 150, o.Y), 0, false, false, []);
+            var squad = home ? a.TownSquadOf(Town, o, building, (o, 0f), (o + new Vector2(10, 0), 0f)) : a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+            CharacterId leader = squad.Leader, member = squad.Members.First(m => m != squad.Leader);
+            var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 100), MathF.PI)).Members[0];
+            var table = a.World.Characters;
+            a.World.Commands.Enqueue(new AttackOrder([member], bandit) { Tick = a.World.Tick });
+            a.World.RunTicks(30);
+            Assert.True(a.Fighting(member), "the member fights the bandit");
+            table.Cold(leader.Slot)!.Medical!.KnockOut(1000);
+            a.World.RunTicks(4 * 15);
+            Assert.Equal(!home, table.Cold(member.Slot)!.Fleeing);
+        }
     }
 
     /// <summary>

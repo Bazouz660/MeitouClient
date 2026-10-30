@@ -1744,7 +1744,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         int able = 0;
         foreach (var m in squad.Members)
             if (table.TryResolveNext(m, out int s) && table.Cold(s)!.Medical is not { Incapacitated: true }) able++;
-        return SquadIntact.Decide(able, Math.Max(board.Size, 1), !squad.Leader.IsNone, SquadIntact.Down(table, squad.Leader), squad.Town >= 0 && board.OwnHome is not null);
+        return SquadIntact.Decide(able, Math.Max(board.Size, 1), !squad.Leader.IsNone, SquadIntact.Down(table, squad.Leader), SquadIntact.PersistentHome(squad));
     }
 
     /// <summary>A running patrol moves on when its leader reaches the route point; the members think again at once.</summary>
