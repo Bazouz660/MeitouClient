@@ -208,9 +208,10 @@ system when the world has none), and between ticks for orders only (`ApplyPaused
      [eating](game/character-stats.md#eating) desire; a food run); a player animal's priority-3 race goals (`CaptiveSystem.RaceGoals`: 277 limb fetch 1, 278 limb play and 279 chase by
      their desires, x the race entry's weight); 259 Picking up food (`FeedSystem`, animals, weight 0.5); 16 attack on sight while on Hold (`AggroSystem`, weight **Unknown**, 1 here,
      listed last as Hold adds it; the enemy this tick's look or a squad mate's found; desire 0 while Passive, sneaking outside a fight or not standing; a deferred fight, row 16).
-     **Engine**: joining a squad mate's defence or, with Help Allies, an ally's (`RetaliationSystem.JoinFight`; how the original's player character joins is **Unknown**): offered by the
-     retaliation pass to one idle or a bodyguard following, not Passive, not sneaking outside a fight; desire 0.6 (below Self preservation's 0.7, above Getting food's 0.5), weight 1,
-     listed first; a deferred defence, row 13, against `AI::findAttackerOf`'s pick.
+     **Engine** stand-in for the player faction's 15 Protect allies ([precedence](game/ai-tasks.md#precedence)): joining a squad mate's defence or, with Help Allies, an ally's
+     (`RetaliationSystem.JoinFight`), offered by the retaliation pass (every 15 ticks or on a fresh alert) to one not Passive, not sneaking outside a fight, whose task the goals come
+     before (`DecisionSystem.GoalsComeFirst`: idle, a standing task, a job's, 14 Idleness) or a bodyguard following; so a medic or worker on its job joins, one on an order does not.
+     Desire 0.6 (engine; below Self preservation's 0.7, above Getting food's 0.5), weight 1, listed first; a deferred defence, row 13, against `AI::findAttackerOf`'s pick.
   5. Jobs: the job list in order (`IJobSource` contributors by type, `DecisionSystem.RegisterJob`; the original's keys N+8, N+7, ...): the jobs switch gates every type but 16, 31,
      45, 57, 58, 250 (`FUN_14050c1c0`, both passes; 289 is gated), a row the repertoire does not register is skipped, the first that can run starts and one that runs the task ends the
      step. So a higher job takes over a lower running one at the next decision; the running job keeps no priority beyond its place. With nothing found, a list job the task still runs

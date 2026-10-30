@@ -161,12 +161,21 @@ public sealed class DecisionSystem
     /// whose task is a job's or 14 Idleness's, or that no start runs (idle, a standing task), is decided every <see cref="Production.ProductionSystem.JobCheckTicks"/>; so is one on an order whose row needs no
     /// melee threat (146, <see cref="PlayerOrders.NeedsNoThreat"/>), which a threat must take off its turret.
     /// </summary>
-    public static bool ReAsked(World world, int slot, CharacterCold cold)
+    public static bool ReAsked(World world, int slot, CharacterCold cold) =>
+        GoalsComeFirst(world.Characters, slot, cold)
+        || !cold.InCombat && cold.Running is { Source: TaskSource.Order } run && run.Runs((CharacterTask)world.Characters.Next[slot].Task)
+            && cold.OrderQueue.Front is { Started: true } front && PlayerOrders.NeedsNoThreat(front.Row);
+
+    /// <summary>
+    /// Whether the character's task is one the step's priority-3 goals (step 4) come before, so a goal that can run takes it over: not a fight, and no start runs it (idling, a standing task),
+    /// or it is a job's (list or implicit; steps 3 and 5) or 14 Idleness's (step 6). Not an order's, a goal's or the engine's. A pure read.
+    /// </summary>
+    public static bool GoalsComeFirst(CharacterTable table, int slot, CharacterCold cold)
     {
-        var task = (CharacterTask)world.Characters.Next[slot].Task;
+        var task = (CharacterTask)table.Next[slot].Task;
         if (task == CharacterTask.Attack || cold.InCombat) return false;
         if (cold.Running is not { } run || !run.Runs(task)) return true;
-        return run.Source == TaskSource.Job || run.Row == TaskType.IDLE || run.Source == TaskSource.Order && cold.OrderQueue.Front is { Started: true } front && PlayerOrders.NeedsNoThreat(front.Row);
+        return run.Source == TaskSource.Job || run.Row == TaskType.IDLE;
     }
 
     /// <summary>Decides every player character that is due, in slot order (serial). <paramref name="paused"/>: between ticks, orders only; the bit stays for the next tick's full step.</summary>

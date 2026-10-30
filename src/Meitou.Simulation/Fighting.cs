@@ -287,10 +287,11 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
         selfFoesTick == world.Tick && joinFoes.TryGetValue(slot, out int a) && world.Characters.Next[a].Alive && world.Characters.Cold(a) is { Medical.Incapacitated: false } ? a : -1;
 
     /// <summary>
-    /// A player character joins a squad mate's defence (<see cref="JoinMates"/>) or, with Help Allies, an ally's (<see cref="HelpAllies"/>): <b>engine</b> rules (how the original's player character
-    /// joins a mate is <b>Unknown</b>, docs/game/ai-tasks.md "Precedence"), asked as a priority-3 goal so the decision step weighs it against the orders, Self preservation and the jobs. Today's
-    /// rule is kept as its condition: idle, or a bodyguard following, not Passive, not sneaking outside a fight (<see cref="CanFight"/>). Desire 0.6 (engine: below Self preservation's 0.7, above
-    /// Getting food's 0.5 at most), weight 1; listed first, so a tie goes to the original's goals. It runs while a defence (row 13) is its fight.
+    /// A player character joins a squad mate's defence (<see cref="JoinMates"/>) or, with Help Allies, an ally's (<see cref="HelpAllies"/>): the engine's stand-in for 15 Protect allies, a
+    /// priority-3 goal of the player faction (docs/game/ai-tasks.md "Precedence"), so the decision step weighs it against the orders and Self preservation and it beats the jobs. Condition
+    /// (<see cref="CanFight"/>): its task is one the goals come before (idle, a standing task, a job's, 14 Idleness: <see cref="DecisionSystem.GoalsComeFirst"/>) or a bodyguard's follow, not
+    /// Passive, not sneaking outside a fight. Desire 0.6 (engine: below Self preservation's 0.7, above Getting food's 0.5 at most), weight 1; listed first, so a tie goes to the original's goals.
+    /// It runs while a defence (row 13) is its fight.
     /// </summary>
     sealed class JoinFight(RetaliationSystem owner) : IDecisionSource
     {
@@ -306,7 +307,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
             var task = (CharacterTask)table.Next[slot].Task;
             if (task == CharacterTask.Attack && cold.Running is { Row: Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ATTACKERS_OF, Source: TaskSource.Reaction } run && run.Runs(task)) return DecisionCheck.Runs;
             if (owner.JoinFoe(world, slot) < 0) return DecisionCheck.No("no mate or ally to join");
-            return CanFight(table, slot, []) ? DecisionCheck.Run : DecisionCheck.No("not idle (engine rule)");
+            return CanFight(table, slot, []) ? DecisionCheck.Run : DecisionCheck.No("busy (engine rule)");
         }
 
         public void Start(World world, int slot)
@@ -622,14 +623,17 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
         return cold.Guarding && task == (byte)CharacterTask.Follow && d.X * d.X + d.Z * d.Z <= ImmediateReach * ImmediateReach;
     }
 
-    /// <summary>Whether a character comes to another's defence: a player's character only without an order and not Passive (<c>scoreProtectAllies</c> is 0 when Passive).</summary>
+    /// <summary>
+    /// Whether a character comes to another's defence: not Passive (<c>scoreProtectAllies</c> is 0 when Passive); a player's character only on a task the decision step's goals come before
+    /// (idle, a standing task, a job's, 14 Idleness, <see cref="DecisionSystem.GoalsComeFirst"/>: its join is a priority-3 goal, <see cref="JoinFight"/>, which beats the jobs) or a
+    /// bodyguard's follow, so not on an order or a goal's or the engine's task.
+    /// </summary>
     /// <remarks>
-    /// scoreProtectAllies (<c>FUN_140599b90</c>, <b>Verified</b>) is 0 for anyone Passive or sneaking out of a fight, player or NPC: neither comes to a defence. A player's character also
-    /// only without an order.
+    /// scoreProtectAllies (<c>FUN_140599b90</c>, <b>Verified</b>) is 0 for anyone Passive or sneaking out of a fight, player or NPC: neither comes to a defence.
     /// </remarks>
     static bool CanFight(CharacterTable table, int slot, HashSet<int> taken) =>
         Helps(table, slot, taken) && table.Cold(slot) is var cold && table.Next[slot].Task is var task
-        && (!cold!.IsPlayer || task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow);
+        && (!cold!.IsPlayer || task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow || DecisionSystem.GoalsComeFirst(table, slot, cold));
 
     /// <summary><see cref="CanFight"/> without the player's task test: able, not Passive, not sneaking outside a fight.</summary>
     static bool Helps(CharacterTable table, int slot, HashSet<int> taken) =>

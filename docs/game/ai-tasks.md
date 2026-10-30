@@ -759,8 +759,9 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
      31 Staying close for STAY_CLOSE (1), and idleness for ROAM_FAR (2, the default). The Hold toggle (standing order 12) does not touch it.
 - **Goals of a character** (`setupAI`): everyone 14 Idleness (priority 1, weight 0.1) and 32 Self preservation (priority 3, weight 1, target itself). A player-faction character
   (its faction's +0x250 set, `FUN_1407916d0`) also 243 Getting food (priority 3, weight 0.5) unless it has it; a player-faction animal also its race's `AI Goals` and 259 Picking
-  up food (priority 3, 0.5), and loses 230. A character of another faction gets its race's `AI Goals`; when an object reached through Character +0x658 (+0x78, +0xf8) has +0x210
-  null, the FACTION record's `AI Goals` are added first (meaning **Unknown**). Hold adds 16 at priority 3; AI packages add theirs ([AI](../simulation.md#ai)). Priorities
+  up food (priority 3, 0.5), and loses 230. A character of another faction gets its race's `AI Goals`. Before that branch, any character whose platoon AI object (`FUN_140791ba0`: Character +0x658,
+  +0x78, +0xf8) has +0x210 null gets its FACTION record's `AI Goals` (**Verified**, code; +0x210 read as the AI contract slot, null for an ordinary squad, **Observed**). The player faction
+  (`204 Nameless`, the only base FACTION with the list) lists 15 Protect allies (AI_TASK 957, classification 3: priority 3, weight 1), so a player character holds goal 15. Hold adds 16 at priority 3; AI packages add theirs ([AI](../simulation.md#ai)). Priorities
   (`taskPriority`): 1 fluff, 2 non-urgent, 3 urgent, 4 obedience; orders are queued at 3.
 - **So, for a player character**: an order beats everything, Self preservation included (an ordered medic keeps treating while hit; each landed blow staggers it and the order
   is planned again, [combat](combat.md#fight-lifecycle-and-orders)). Self preservation (while an attacker is within 181.7), Getting food and Hold's attack on sight beat every
@@ -783,9 +784,21 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   14 Idleness (a player character's routine: it stands; the default task is never reached, as only ROAM_FAR is modelled). A task that ends leaves its character idle for the step to
   re-decide (the original re-plans; nothing resumes). Followers and bodyguards fight by their rows: an attacker of the followed character within 40 (16), a bodyguard also its own
   within 40 (39), as a step of the row, and follow again when the fight ends. The step runs on the replan triggers above plus an engine re-ask every `JobCheckTicks` of a character
-  idle or on a job's task (no periodic replan was found), so a higher job takes over a running one within that period, where the original waits for its next replan. Gap: mates join a
-  fight only from idle (the original's way a player character joins a mate is **Unknown**; the player faction's FACTION `AI Goals` list 15 Protect allies, [animals](animals.md#ai-goals),
-  which may be it).
+  idle or on a job's task (no periodic replan was found), so a higher job takes over a running one within that period, where the original waits for its next replan. Goal 15 is the
+  engine's `RetaliationSystem.JoinFight` at step 4: offered to a character idle or on a job's task (any task a priority-3 goal replaces; an order blocks it), so it beats the jobs as 15
+  does. Gaps: desire 0.6 (original below), only squad mates within 250 (original: any sensed ally of the player faction), and the offer comes with the retaliation pass (every 15 ticks
+  or a fresh alert), not at every decision.
+- **15 Protect allies for a player character** (**Verified**: desire `FUN_140599b90`, finder `FUN_14099ca10`, falloff `FUN_1409b2380`, constants from the exe): desire 0 when Passive or
+  sneaking outside a fight; else the finder's best sensed ally (seen or heard, tagged ally) whose AI holds a target (`FUN_14099a190`, value **Unknown**) x clamp((1000 - d^2) / 990, 0.1, 1)
+  (d the distance to that ally: 1 within about 3 units, 0.1 beyond about 32; no other distance limit), an ally of another faction only with Help Allies and then squared; x0.5 while
+  carrying. Its plan is 13 Attacking attackers of (attackers within 150 of the ally). Being above 0, it beats every job (step 5) whenever 13 finds an attacker.
+- **The medic jobs' own threat tests** (**Verified** against `TaskDataTable`, lists read row by row): 58 Medic and 250 Splint Rigging have no list B; their treatment rows 25 First aid and
+  249 Splinting need `38 23 !140 42 46 !157` / `38 151 !140 42 46 !157` (an arm, a kit, the target not swimming, standing still, at the target, weapon away): no threat state. Only 57
+  Robotics needs `!39` (its own melee threat within 40), which 13 provides, so a robotics job under a threat within 40 plans a fight, as 45 does. The desire `FUN_140998410` drops to
+  0.01 / 0.05 near enemies but stays above 0. So a medic job yields mid-fight only to step 4: Self preservation against its own attacker, 15 for a fighting ally.
+- **A blow aimed at another** (a technique's extra hits in its zone) puts the hitter on no threats list: Self preservation's desire (`FUN_140599d20`) reads the senses' threats
+  (AI +0x80 / +0x88 = SensoryData +0x58 / +0x60: characters whose intended target is the looker, positive aggression, within 181.7) and the +0x2b0 flag built from them; the hit's
+  `underMeleeAttack` (`FUN_140999f00`) only replans (**Observed**). Such a medic fights only through 15.
 
 ## Combat goals
 
@@ -1089,7 +1102,7 @@ A character's job list (the Orders menu's "Perma-Jobs"; class `OrdersReceiver`, 
 `isTargetMarkedForDeath` (`FUN_14032eb40`), `AITaskSytem.pathFailures` (+0x218, the "give-up list"), `Character::isAlly` / `isEnemy` (vfuncs `0x3f0` / `0x3e8`), `amInsideTownWalls` (`0x118`), `isIndoors` (`0x1d8`, a building
 hand), `isGettingEaten` (+0x279), `CharStats._holdPositionMode` (+0x12b).
 - **Kits**: any item of function 1 (organic) or 12 (robot) in the medic's inventory or its backpack (**Verified**: `FUN_14099f690` tests the inventory, then a second lookup of the backpack's inventory; `FUN_14004b84e` compares each item's function only, with no charge or quantity test). Squad mates' kits do not count for the job. The task then takes a kit from the medic's own main grid, then its worn backpack, the fewest charges above zero (the rig task's search, **Verified**; the first aid tasks share its vtable slot, **Observed**: [kit search](character-stats.md#first-aid-update)). The splint finder wants function 2 and takes X = min(the medic's `medic` stat, the kit's quality).
-- **Desire** (`FUN_140998410`): 0.01 while the AI's `+0xb0` is above 0, else 0.05 while `+0xbc` is above 0 (both read as enemy counts, **Observed**), else 0.1 while the medic carries someone, else 1. Always above 0, and `FUN_14050e5b0` keeps a job whose desire is above 0 (**Verified**). The finder has no squad-fight test (**Verified**, `FUN_14099f690`): a free player medic treats a downed mate while its squad fights (**Observed**, offscreen sandbox run). Meitou: an NPC medic waits while its squad fights or it carries someone (engine stand-ins for the low desire; a kidnapper otherwise walked off after a patient with its captive).
+- **Desire** (`FUN_140998410`): 0.01 while the AI's `+0xb0` is above 0, else 0.05 while `+0xbc` is above 0 (both read as enemy counts, **Observed**), else 0.1 while the medic carries someone, else 1. Always above 0, and `FUN_14050e5b0` keeps a job whose desire is above 0 (**Verified**). The finder has no squad-fight test (**Verified**, `FUN_14099f690`): the finder alone does not keep a player medic from a downed mate while its squad fights (**Observed**, offscreen sandbox run); the step does, through 15 Protect allies at step 4 ([precedence](#precedence)). Meitou: an NPC medic waits while its squad fights or it carries someone (engine stand-ins for the low desire; a kidnapper otherwise walked off after a patient with its captive).
 - **Need** (`FUN_140998200`) of a patient for this medic: 0 while the patient's CombatClass `+0x130` is set (fighting). The kit test is on unless the medic is not of the player's faction and the patient is imprisoned or a chained
   slave of the medic's faction (`FUN_14032e2a0`, which then counts without kits); the organic need score ([first aid need](character-stats.md#first-aid-need-score)) counts with an organic kit, the robot one with a robot kit.
   Another faction's patient: x 0.8 when `isAlly` (relation 50 or more, the allied flag, squad memory), else x relation / 100, at least 0.05 (`DAT_141696c74`). The further floor of 0.01 for a player medic with a current
