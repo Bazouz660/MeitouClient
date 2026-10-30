@@ -138,6 +138,7 @@ of definitions and gives each a weight; zero-weight ones are dropped:
   `L/R leg damage min / ideal / max` of that side (left values if the left leg is worse). The loader forces
   min < 1 to −101 and max > 99 to 101, so a healthy-leg clip covers the whole range. Idle picks (`@ 14051ec80`, `@ 14051d310`) weigh the legs the same way, so an idle records 0 .. 100 still plays on a leg
   below 0 (limping, not yet collapsed); Meitou reads the range alike in `AnimationDefinition.Fits` (`LegFloor`, `LegCeil`; before, the idle list was empty for such a leg).
+  The idle draw `FUN_14051ec80` never comes back empty (**Verified**): with no record fitting it returns the first record of the idle list it was given (`+0x2c0`; which record that is in the base data is **Unknown**). The crawl idles' `-999` leg minimum is read as -101, so a leg past -101 % (a severed one; `HealthPart.Fraction` is unbounded) fits neither `crawl idle` and the pick was empty, leaving a stopped crawler in the bind pose (**Verified**: probe of the base data, no crawl idle fits a leg under -101 in any combat or stealth state). Meitou: `AnimationLibrary.CrawlIdles` then ignores the leg ranges and takes the first grounded idle that fits the rest, in data order.
 - Only for idle picks (layer upper or overlay): `being carried` / `carrying left` / `carrying right` must
   match the character, and the weapon-type flags must include the equipped weapon's type; for unarmed (type 5)
   a clip that `has weapon L` or `R` YES gets weight 0.1 instead.
