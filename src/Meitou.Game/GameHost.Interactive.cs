@@ -32,6 +32,7 @@ sealed partial class GameHost
         // The world's files are read on a worker from here on: while the window and the device are made, then behind the loading screen.
         var sceneRead = LoadScene is { } readScene ? Task.Run(readScene) : null;
         BeginAudio();
+        bool frameGenerationAtStart = config.FrameGeneration;   // read at start-up only
         using var display = new VulkanDisplay(WindowOptions.Default with
         {
             Size = new Vector2D<int>(o.Width, o.Height),
@@ -40,7 +41,7 @@ sealed partial class GameHost
             IsVisible = false,
             FramesPerSecond = 0,
             UpdatesPerSecond = 0,
-        }, vsync, dlss: true, frameGeneration: config.FrameGeneration);   // Load before the device so the settings panel can switch to DLSS without restarting.
+        }, vsync, dlss: true, frameGeneration: frameGenerationAtStart);   // Load before the device so the settings panel can switch to DLSS without restarting.
         streamline = display.Streamline;
         ngx = display.Ngx;
         var window = display.Window!;
@@ -118,7 +119,9 @@ sealed partial class GameHost
                     Text: v => v <= 0 ? "Unlimited" : $"{v:0} fps"), config)
             {
                 UpscalerStatus = () => gpu.Post?.ActiveUpscaler ?? "Off",
-                FrameGenerationStatus = () => display.FrameGeneration ? "active" : config.FrameGeneration ? "unavailable (see the log), plain swapchain in use" : "off",
+                // The state is the start-up setting's; a change shows as pending until the restart.
+                FrameGenerationStatus = () => (display.FrameGeneration ? "active" : frameGenerationAtStart ? "unavailable (see the log), plain swapchain in use" : "off")
+                    + (config.FrameGeneration != frameGenerationAtStart ? $", {(config.FrameGeneration ? "on" : "off")} after a restart" : ""),
                 AttackSlotsChanged = slots => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.AttackSlots = slots; },
                 LateDefencesChanged = on => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.LateDefences = on; },
                 GunnerFacingChanged = on => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.GunnerFacesBarrel = on; },
