@@ -90,6 +90,8 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
     // The approach of a Talk order, and the open conversation.
     CharacterId talker = CharacterId.None, target = CharacterId.None;
     long approachUntil, nextAim;
+    // Where the approach last sent the talker (the NPC's place then).
+    Vector2 aimedAt;
     Conversation? open;
     ConversationView? view;
     DialogueRequest? request;
@@ -195,13 +197,19 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
             {
                 Hold(world, n);
                 // The walk follows the NPC: its order goal is renewed when the NPC has moved on or the walk has ended short of it (Task_Move toward a character re-aims, Observed).
+                // A talker doing anything else (another order, a fight) has left the approach.
                 if (world.Tick >= nextAim)
                 {
                     nextAim = world.Tick + (long)MathF.Ceiling(RepathSeconds / world.TickSeconds);
                     ref readonly var tp = ref table.Next[p];
                     var at = table.Next[n].Position;
-                    if (tp.Task != (byte)CharacterTask.GoTo || Vector2.Distance(tp.Goal, new Vector2(at.X, at.Z)) > RepathDistance)
+                    bool walking = tp.Task == (byte)CharacterTask.GoTo && Vector2.Distance(tp.Goal, aimedAt) <= RepathDistance, stopped = tp.Task == (byte)CharacterTask.Idle;
+                    if (!walking && !stopped) CancelApproach(world);
+                    else if (stopped || Vector2.Distance(aimedAt, new Vector2(at.X, at.Z)) > RepathDistance)
+                    {
+                        aimedAt = new Vector2(at.X, at.Z);
                         world.Defer(new MoveOrder([talker], at) { Tick = world.Tick + 1 });
+                    }
                 }
             }
         }
@@ -230,6 +238,7 @@ public sealed partial class DialogueSystem : ITickSystem, IStateHashed, IDialogu
         approachUntil = world.Tick + (long)(Settings.ApproachSeconds / world.TickSeconds);
         Hold(world, n);
         nextAim = world.Tick + (long)MathF.Ceiling(RepathSeconds / world.TickSeconds);
+        aimedAt = new Vector2(table.Next[n].Position.X, table.Next[n].Position.Z);
         if (!InTalkRange(table, p, n))
             world.Defer(new MoveOrder([talker], table.Next[n].Position) { Tick = world.Tick + 1 });
     }
