@@ -1046,6 +1046,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (!Settings.AttackOnSight || finder == FoeFinder.Stance || (uint)slot >= (uint)slots.Length || slots[slot].Senses is not { } own
             || table.Cold(slot) is not { Medical: not null, SlaveState: not 1, Fighter.CanAttack: true } cold || !Relations.Contains(cold.Faction)) return CharacterId.None;
         var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
+        if (finder == FoeFinder.TroubleMakers) return FindTroubleMaker(world, slot, cold, own, war);
         bool neutrals = finder == FoeFinder.EnemiesAndNeutrals;
         // As the look's own gate: no enemy faction about, no neutrals wanted, no war and no TEMP_ENEMY tag of its squad leave nothing to find.
         if (!(cold.Faction < hasEnemy.Length && hasEnemy[cold.Faction]) && !neutrals && !war.IsSet && !(Memory?.AnyTempEnemy(cold.SquadId) ?? false)) return CharacterId.None;
@@ -1080,6 +1081,52 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             }
         }
         return scan.Best >= 0 ? new CharacterId(scan.Best, table.Previous[scan.Best].Generation) : CharacterId.None;
+    }
+
+    /// <summary>
+    /// 34 ATTACK_TROUBLE_MAKERS, "Law enforcer" (finder <c>FUN_14099baa0</c>, <b>Verified</b>; docs/game/ai-tasks.md "Combat goals"): nothing while the looker is in no town (its current town).
+    /// Pass 1, the entries of its senses tagged ENEMY and not KO (seen or heard or not): one in the same town whose current goal intends aggression (status +0xac,
+    /// <see cref="Ai.TaskAggression.OfGoal"/>) or that its squad tagged AGGRESSOR. Pass 2, the entries tagged NEUTRAL and not KO: not law enforcement, trader or diplomat; military only when
+    /// its squad's town is not this one and its faction does not own it (the town's resident factions are <b>Unknown</b>: the owner stands in); in the same town; not a slaver; intending
+    /// aggression, tagged AGGRESSOR, or a bandit or an animal whose running task intends it (+0xa0); and attacking someone in a fight whom the looker counts as an ally (its own or an
+    /// allied faction; the original's "innocent" victim branch is <b>Unknown</b> in part and left out). The best by the target score, as the look's (the area test <c>FUN_140599f30</c> is not
+    /// modelled). A pure read (any thread in the think).
+    /// </summary>
+    CharacterId FindTroubleMaker(World world, int slot, CharacterCold cold, SenseBlock own, WarTargets war)
+    {
+        if (Towns is not { } towns) return CharacterId.None;
+        var table = world.Characters;
+        var prev = table.Previous;
+        var town = Ai.AiSystem.TownAt(towns, world, prev[slot].Position);
+        if (town.IsNone) return CharacterId.None;
+        int owner = town.Site >= 0 && town.Site < towns.SiteFactions.Count ? towns.SiteFactions[town.Site] : -1;
+        var fights = Combat ?? world.SystemOf<Combat.CombatSystem>();
+        var scan = NewScan(world, slot, cold, Ai.AiStance.Defensive, war, MathF.Max(0, RangeOf(cold, Settings.SightRange)), null, keepSenses: false);
+        foreach (var e in own.entries)
+        {
+            int t = e.Target;
+            bool enemy = (e.Tags & SenseTag.Enemy) != 0;
+            if ((e.Tags & SenseTag.Ko) != 0 || !enemy && (e.Tags & SenseTag.Neutral) == 0 || (uint)t >= (uint)table.HighWater || !prev[t].Alive || prev[t].Generation != e.Generation
+                || table.Cold(t) is not { Medical.Incapacitated: false, IsImprisoned: false } c) continue;
+            var id = new CharacterId(t, e.Generation);
+            bool aggressor = Memory is { } memory && cold.SquadId >= 0 && memory.HasShort(world, cold.SquadId, id, Dialogue.MemoryTag.Aggressor);
+            bool intends = Ai.TaskAggression.OfGoal(c) > 0;
+            if (!enemy)
+            {
+                if (c.NpcClass is FundamentalType.LawEnforcement or FundamentalType.Trader or FundamentalType.Diplomat or FundamentalType.Slaver) continue;
+                if (c.NpcClass == FundamentalType.Military && (c.Faction == owner || world.Squads.Find(c.SquadId)?.Ai?.Town == town.Site && town.Site >= 0)) continue;
+                if (!(intends || aggressor || Ai.TaskAggression.OfTask(c) > 0 && (c.NpcClass == FundamentalType.Bandit || c.Fighter?.IsAnimal == true))) continue;
+                if (fights is null || fights.TargetOf(t, e.Generation) is not { Slot: >= 0 } v || (uint)v.Slot >= (uint)table.HighWater || prev[v.Slot].Generation != v.Generation
+                    || table.Cold(v.Slot) is not { InCombat: true } victim || !(victim.Faction == cold.Faction || Relations.Contains(victim.Faction) && Relations.IsAlly(cold.Faction, victim.Faction))) continue;
+            }
+            else if (!intends && !aggressor) continue;
+            if (Ai.AiSystem.TownAt(towns, world, prev[t].Position) != town || PursuitSystem.PathImpossible(cold, id, world.Tick)) continue;
+            float d2 = Vector3.DistanceSquared(prev[t].Position, scan.Eye);
+            float score = Score(ref scan, t, c, d2) ?? float.NegativeInfinity;
+            if (!(score > scan.BestScore)) continue;
+            (scan.Best, scan.BestD2, scan.BestScore) = (t, d2, score);
+        }
+        return scan.Best >= 0 ? new CharacterId(scan.Best, prev[scan.Best].Generation) : CharacterId.None;
     }
 
     static void Candidate(ref Scan s, int slot, CharacterCold c)
@@ -1142,7 +1189,6 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     static bool Wants(ref Scan s, int slot, Vector3 at)
     {
         if (s.Finder == FoeFinder.Territory) return InTerritory(ref s, slot, at);
-        if (s.Finder == FoeFinder.TroubleMakers) return StopsTroubleMaker(ref s, slot, at);
         if (s.Stance == Ai.AiStance.Territorial && InTerritory(ref s, slot, at)) return true;
         if (s.Cold?.Ai is not { } mind) return false;
         return mind.ProtectsSquad && s.Squad >= 0 && Protects(ref s, slot)
