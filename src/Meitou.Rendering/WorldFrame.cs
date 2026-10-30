@@ -106,6 +106,8 @@ sealed class WorldOptions
     public bool MeitouIcons = true;
     /// <summary>The <c>blood</c> switch's Meitou side: every blood cell within Decal Range drawn, up to <c>TerrainDecalRenderer.MaxSlots</c>; false: the game's 8 nearest.</summary>
     public bool MeitouBlood = true;
+    /// <summary>The <c>bloodsurfaces</c> switch's Meitou side: blood also on walls, buildings, floors and other static objects (<c>TerrainDecalRenderer.Surfaces</c>); false: the terrain only, as the game.</summary>
+    public bool MeitouBloodSurfaces = true;
     public float? ImpostorDistance, LargeImpostorDistance;
     public double? ImpostorBudgetMb;
     public float HazeStrength = Enhancements.MeitouHazeStrength; // the Meitou haze switch (default); 1 = the game's haze
@@ -246,7 +248,7 @@ sealed class WorldOptions
           --no-vsync               start with vsync off (uncapped; Tab slider)
           --grass-density <x>      grass blades x this (0.1-2, default 1; Tab slider)
           --camera-code <hex>      start at a camera code (Ctrl+C in the viewer copies one), the world loaded round it
-          --faithful <all|ao,dither,haze,aa,shadows,range,impostors,reach,water,particles,lod,gi,tonemap,shafts,heathaze,night,planetshine,stars,nightgrade,clouds,cloudshadows,cloudfog,interiorgi,charlod,skin,interiorlamps,icons,blood,parallax,displace>   the game's look instead of Meitou's enhancements (default: all Meitou; --meitou <...> turns them back on; these ids also name the --ab switches)
+          --faithful <all|ao,dither,haze,aa,shadows,range,impostors,reach,water,particles,lod,gi,tonemap,shafts,heathaze,night,planetshine,stars,nightgrade,clouds,cloudshadows,cloudfog,interiorgi,charlod,skin,interiorlamps,icons,blood,bloodsurfaces,parallax,displace>   the game's look instead of Meitou's enhancements (default: all Meitou; --meitou <...> turns them back on; these ids also name the --ab switches)
           --show-keys              start with the key list overlay open (toggle with F10)
           --play-shots             start flying the saved camera keys (the F2 timeline) on a loop
           --log-spikes             print a line for every frame whose GPU time is over 1.5 x the median: stage times (GPU, render thread) and what it uploaded or rebuilt
@@ -302,7 +304,8 @@ sealed class WorldOptions
         () => o.SkinShading, v => o.SkinShading = v,
         () => o.InteriorLamps, v => o.InteriorLamps = v,
         () => o.MeitouIcons, v => o.MeitouIcons = v,
-        () => o.MeitouBlood, v => o.MeitouBlood = v);
+        () => o.MeitouBlood, v => o.MeitouBlood = v,
+        () => o.MeitouBloodSurfaces, v => o.MeitouBloodSurfaces = v);
 
     public static WorldOptions? Parse(string[] args)
     {
@@ -1086,7 +1089,8 @@ static class WorldFrame
             () => gpu()?.Characters?.SkinShading ?? o.SkinShading, v => { o.SkinShading = v; if (gpu()?.Characters is { } c) c.SkinShading = v; },
             () => gpu()?.Lamps?.InteriorAllDay ?? o.InteriorLamps, v => { o.InteriorLamps = v; if (gpu()?.Lamps is { } l) l.InteriorAllDay = v; },
             () => gpu()?.Characters?.EnhancedIcons ?? o.MeitouIcons, v => { o.MeitouIcons = v; if (gpu()?.Characters is { } c) c.EnhancedIcons = v; },
-            () => gpu()?.Decals?.Meitou ?? o.MeitouBlood, v => { o.MeitouBlood = v; if (gpu()?.Decals is { } d) d.Meitou = v; });
+            () => gpu()?.Decals?.Meitou ?? o.MeitouBlood, v => { o.MeitouBlood = v; if (gpu()?.Decals is { } d) d.Meitou = v; },
+            () => gpu()?.Decals?.Surfaces ?? o.MeitouBloodSurfaces, v => { o.MeitouBloodSurfaces = v; if (gpu()?.Decals is { } d) d.Surfaces = v; });
 
     public static SettingsPanel CreateSettingsPanel(DebugOverlay ui, Gpu g, WorldRenderOptions r, Func<float>? getHour = null, Action<float>? setHour = null,
         Func<bool>? getVSync = null, Action<bool>? setVSync = null, IReadOnlyList<Enhancement>? switches = null,
@@ -1579,11 +1583,25 @@ static class WorldFrame
             gpu.Terrain.InteriorCut = null;
             gpu.Terrain.FogCull = null;
             StageClock.Lap(6);
+            // The blood on walls, buildings and objects (the bloodsurfaces switch) needs the depth the terrain alone wrote, to leave the terrain's pixels to its own blood.
+            bool surfaceBlood = nearSlice && gpu.Decals is { Surfaces: true, SurfaceCount: > 0 } bloodDecals && gpu.DecalStore is not null && bloodDecals.SurfacesNear(eye);
+            if (surfaceBlood)
+            {
+                host.Close();
+                gpu.Decals!.CaptureTerrainDepth(post.SceneDepth);
+                host.Open(7, post.WithShadingRate(post.SceneTargets));
+            }
             host.Stage(7);
             if (gpu.Objects is { } fogObjects) { fogObjects.FogCull = fogCull; fogObjects.InteriorCut = nearSlice ? gpu.InteriorMask : null; }
             if (render.Objects) gpu.Objects?.Draw(viewProjection, eye, frustum, render, light.SunDirection, light.FogColour, light.FogDistance, gpu.Terrain);
             if (gpu.Objects is { } fogObjectsDone) { fogObjectsDone.FogCull = null; fogObjectsDone.InteriorCut = null; }
             StageClock.Lap(7);
+            if (surfaceBlood)
+            {
+                host.Close();
+                gpu.Decals!.CaptureStaticDepth(post.SceneDepth);
+                host.Open(8, post.WithShadingRate(post.SceneTargets));
+            }
             // Foliage in every depth slice (it reaches 32000+ units at the default x4), counted as one draw.
             host.Stage(8);
             if (gpu.Foliage is { } fogFoliage) { fogFoliage.FogCull = fogCull; fogFoliage.Occlusion = post.OcclusionFor(eye); fogFoliage.InteriorCut = nearSlice ? gpu.InteriorMask : null; }
@@ -1601,6 +1619,15 @@ static class WorldFrame
                 if (gpu.BoltPieces.Count > 0) debris.Draw(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(gpu.BoltPieces), viewProjection, eye, frustum, light);
             }
             StageClock.Lap(6);
+            // The blood on walls, buildings and objects (the bloodsurfaces switch): over the finished opaque scene, under the characters and the water.
+            if (surfaceBlood)
+            {
+                host.Close();
+                float tanY = MathF.Tan(camera.FieldOfView * 0.5f);
+                gpu.Decals!.RecordSurfaces(post.SceneColour, post.SceneDepth, near, far, rotation, tanY * aspect, tanY, eye, new Vector2(2 * jitter.X / rw, 2 * jitter.Y / rh));
+                host.Open(6, post.WithShadingRate(post.SceneTargets));
+                StageClock.Lap(StageClock.Blood, "blood surfaces");
+            }
             // Characters after the opaque geometry: they alone write the scene's alpha (SSAO's character mask), so nothing drawn later may cover them but water.
             if (gpu.Characters is { } fogCharacters) { fogCharacters.FogCull = fogCull; fogCharacters.InteriorObjects = gpu.Objects; }
             if (nearSlice) post.CharactersDrawn = false;   // none this frame unless the near slice draws some below

@@ -57,7 +57,8 @@ public static class Enhancements
         Func<bool>? cloudFog = null, Action<bool>? setCloudFog = null,
         Func<bool>? interiorGi = null, Action<bool>? setInteriorGi = null, Func<bool>? characterLod = null, Action<bool>? setCharacterLod = null,
         Func<bool>? skin = null, Action<bool>? setSkin = null, Func<bool>? interiorLamps = null, Action<bool>? setInteriorLamps = null,
-        Func<bool>? icons = null, Action<bool>? setIcons = null, Func<bool>? blood = null, Action<bool>? setBlood = null) =>
+        Func<bool>? icons = null, Action<bool>? setIcons = null, Func<bool>? blood = null, Action<bool>? setBlood = null,
+        Func<bool>? bloodSurfaces = null, Action<bool>? setBloodSurfaces = null) =>
     [
         new("ao", "Ambient occlusion", "off", "SSAO",
             () => post.Ssao, v => post.Ssao = v, "the game ships SSAO but has it disabled"),
@@ -141,6 +142,9 @@ public static class Enhancements
         new("blood", "Blood cells", "8 nearest", $"up to {TerrainDecalRenderer.MaxSlots}",
             blood ?? (() => false), setBlood ?? (_ => { }),
             $"the game draws the blood of only the 8 terrain cells (288 units square) nearest the camera, so a big battle's blood ends at a straight cell edge and the cells past it dry up unseen; Meitou draws every cell within Decal Range, up to {TerrainDecalRenderer.MaxSlots} (docs/game/blood-decals.md)"),
+        new("bloodsurfaces", "Blood on surfaces", "terrain only", "walls, floors, objects",
+            bloodSurfaces ?? (() => false), setBloodSurfaces ?? (_ => { }),
+            "the game leaves blood only on the terrain, so a fight beside a wall or inside a building marks nothing there; Meitou also sprays splashes over walls, buildings, rocks and other static objects, and leaves pools and drips on floors, never up a wall (docs/game/blood-decals.md \"Blood on surfaces\")"),
         // The ground relief's settings are static (GroundRelief), so these two need no delegates. The labels are the saved keys of the on/off toggles they replace.
         new("parallax", "Ground parallax", "off", "relief march",
             () => GroundRelief.ParallaxActive, v => GroundRelief.ParallaxActive = v,
