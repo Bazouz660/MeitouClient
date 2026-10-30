@@ -22,6 +22,9 @@ public enum CareKind { None, Treating, Resting }
 public readonly record struct BodyStatus(float Blood, float WorstPart, float Hunger, bool Unconscious, bool Dead, bool NeedsAid = false, CareKind Care = CareKind.None, bool MedicJob = false, bool RescueJob = false,
     bool NeedsSplint = false, float KoTimer = 0, bool PlayingDead = false, bool StayingLow = false, bool NeedsRobotAid = false)
 {
+    /// <summary>The context menu's two independent tests (<c>FUN_1407c05a0</c> with the kit kind 0 and 1, docs/game/ui-input.md "Context menu verbs"): the organic need above the floor (First Aid, 25) and the robot one (Repairs, 60); <see cref="NeedsAid"/> is either, <see cref="NeedsRobotAid"/> the robot one only when the organic is not.</summary>
+    public bool NeedsOrganicAid { get; init; }
+    public bool NeedsRepairs { get; init; }
     /// <summary>The health word's other states (docs/game/ui-screens.md "Health word choice"): being eaten (<see cref="Bodies.MedicalState.EatenCountdown"/>), the recovery coma, the forced crawl (posture 2) and a right arm that does not work.</summary>
     public bool BeingEaten { get; init; }
     public bool Coma { get; init; }

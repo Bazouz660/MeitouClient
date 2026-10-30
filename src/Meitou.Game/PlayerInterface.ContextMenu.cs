@@ -111,7 +111,9 @@ sealed partial class PlayerInterface
         // The medic verbs, unless it is dead or a hostile one standing (the original: the lead's enemy test, vtable +0x3e8).
         if (target.Body is { Dead: false } && (down || target.IsPlayer || !Hostile(target)))
         {
-            if (target.Body is { NeedsAid: true }) verbs.Add(("First Aid", () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, id) { Tick = session.World.Tick })));
+            // Repairs (60, the robot kit's need) and First Aid (25, the organic need) are separate tests (FUN_1407a6bc0 calls FUN_1407c05a0 with kind 1 then 0); one order serves both kits.
+            if (target.Body is { NeedsRepairs: true }) verbs.Add(("Repairs", () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, id) { Tick = session.World.Tick })));
+            if (target.Body is { NeedsOrganicAid: true }) verbs.Add(("First Aid", () => Say(new Meitou.Simulation.FirstAid.TreatOrder(selection, id) { Tick = session.World.Tick })));
             if (target.Body is { NeedsSplint: true }) verbs.Add(("Splint Injuries", () => Say(new Meitou.Simulation.FirstAid.SplintOrder(selection, id) { Tick = session.World.Tick })));
         }
         // Locked shackles (the original's verbs 201, 185, 186): pick the lock, saw them off with a tool, or break them by strength; the wearer's own or a mate's (another faction's: a crime).
