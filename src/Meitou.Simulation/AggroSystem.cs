@@ -33,8 +33,8 @@ public readonly record struct AggroEntry(long Tick, CharacterId Attacker, Charac
 /// that it sees (<see cref="SightMap.Sees"/>: places, light and its range R = <see cref="AggroSettings.SightRange"/> x its race's <c>vision range mult</c> times the view-cone factor
 /// of <see cref="Visibility"/>) whose faction its own is hostile to (relation -30 or lower) and that its own faction does not list in <c>coexistence</c> (<see cref="AttacksOnSight"/>); ties go to the lower slot. It emits one
 /// effect at that target.</item>
-/// <item><b>Decide</b> (<c>Apply</c>, serial commit order): the looker, if still free, and its free squad mates within twice their own range R of the target (the original's
-/// squad-shared sightings, <c>GroupSense</c>) get an <see cref="AttackOrder"/> for the next tick through <see cref="World.Defer"/>. The player's characters look and join only with
+/// <item><b>Decide</b> (<c>Apply</c>, serial commit order): the looker, if still free, and those of its free squad mates within twice their own range R of the target (the original's
+/// squad-shared sightings, <c>GroupSense</c>) whose own goals take the target get an <see cref="AttackOrder"/> for the next tick through <see cref="World.Defer"/>. The player's characters look and join only with
 /// the attacking-enemies job (<see cref="HuntsEnemies"/>) or on Hold, and are offered the sighting: the decision step starts their fight (<see cref="HoldAttack"/>, <see cref="AttackJob"/>);
 /// they have no leash, and after a job's fight go back to following or stand idle.</item>
 /// <item><b>Chase give-up and stand down</b> (<c>SlowWorld</c>, serial, every tick): an NPC running after its target (<see cref="CharacterCold.CombatRunning"/>) senses that
@@ -671,7 +671,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         }
     }
 
-    Scan NewScan(World world, int i, CharacterCold cold, Ai.AiStance stance, WarTargets war, float outdoor, EffectBuffer? effects)
+    Scan NewScan(World world, int i, CharacterCold cold, Ai.AiStance stance, WarTargets war, float outdoor, EffectBuffer? effects, bool keepSenses = true)
     {
         var prev = world.Characters.Previous;
         return new Scan
@@ -685,7 +685,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             Employer = EmployerOf(world, cold, out bool allies), EmployerAllies = allies,
             Home = stance == Ai.AiStance.Territorial ? Territory(cold) : default,
             Spots = slots[i].Spots, Heard = slots[i].Heard, Sightings = effects is null ? null : sightings ??= [], Effects = effects,
-            Block = slots[i].Senses ??= new SenseBlock(),
+            Block = keepSenses ? slots[i].Senses ??= new SenseBlock() : slots[i].Senses ?? new SenseBlock(),
             FightTarget = cold.InCombat && (Combat ?? world.SystemOf<Combat.CombatSystem>()) is { } combat ? combat.StateOf(new CharacterId(i, prev[i].Generation)).TargetSlot : -1,
         };
     }
@@ -1214,7 +1214,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         if (!Free(table, i, taken) || !next[t].Alive || table.Cold(t) is not { Medical.Incapacitated: false } target) return;
         var fighters = new List<CharacterId> { table.IdOf(i) };
         taken.Add(i);
-        JoinMates(world, table, i, t, fighters);
+        JoinMates(world, table, i, t, target, fighters);
         var targetId = table.IdOf(t);
         // A player character takes this fight through row 16 only, Hold's goal (priority 3) or its job: it is offered it, and the decision step weighs it against its orders, goals and jobs.
         if (offersTick != world.Tick) { offers.Clear(); offersTick = world.Tick; }
@@ -1273,10 +1273,12 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     }
 
     /// <summary>
-    /// The looker's free squad mates join when the target is within twice their own range R (in the squad's member order). The original shares a squad's sightings
-    /// (<c>GroupSense</c>): a member counts a character a mate saw or heard as seen within 2 R, with no view cone or light test (<c>FUN_140857b10</c>, Observed).
+    /// The looker's squad mates share its sighting, not its attack: the original shares a squad's sightings (<c>GroupSense</c>: a member counts a character a mate saw or heard as seen
+    /// within 2 R, with no view cone or light test, <c>FUN_140857b10</c>, Observed), and each member attacks only by its own goals. So a free mate within twice its own range R of the
+    /// target joins when its own attack-on-sight finder takes the target (<see cref="Takes"/>), in the squad's member order; a mate whose goals do not (a shopkeeper's 143, a Passive
+    /// one) stays, and joins later only by its own goal (143 once a mate holds a target).
     /// </summary>
-    void JoinMates(World world, CharacterTable table, int slot, int target, List<CharacterId> fighters)
+    void JoinMates(World world, CharacterTable table, int slot, int target, CharacterCold targetCold, List<CharacterId> fighters)
     {
         var squad = table.Cold(slot)!.SquadId >= 0 ? world.Squads.Find(table.Cold(slot)!.SquadId) : null;
         if (squad is null) return;
@@ -1284,11 +1286,26 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         foreach (var m in squad.Members)
         {
             if (!table.TryResolveNext(m, out int s) || s == slot || !Free(table, s, taken)) continue;
-            float r = 2 * RangeOf(table.Cold(s)!, Settings.SightRange);
-            if (Vector3.DistanceSquared(table.Next[s].Position, at) > r * r) continue;
+            var cold = table.Cold(s)!;
+            float r = 2 * RangeOf(cold, Settings.SightRange);
+            if (Vector3.DistanceSquared(table.Next[s].Position, at) > r * r || !Takes(world, s, cold, target, targetCold)) continue;
             fighters.Add(m);
             taken.Add(s);
         }
+    }
+
+    /// <summary>
+    /// Whether the character in <paramref name="slot"/> would attack <paramref name="target"/> had it sensed it itself: its own look's gates (a slave, a faction without relations and the
+    /// Passive stance pick no fight) and its attack-on-sight finder (<see cref="Candidate"/>: its stance and goals, the relations, a holder's post test). Serial phases only.
+    /// </summary>
+    bool Takes(World world, int slot, CharacterCold cold, int target, CharacterCold targetCold)
+    {
+        var stance = cold.Ai?.Stance ?? Ai.AiStance.Aggressive;
+        if (cold.SlaveState == 1 || stance == Ai.AiStance.Passive || !Relations.Contains(cold.Faction)) return false;
+        var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
+        var scan = NewScan(world, slot, cold, stance, war, MathF.Max(0, RangeOf(cold, Settings.SightRange)), null, keepSenses: false);
+        Candidate(ref scan, target, targetCold);
+        return scan.Best == target;
     }
 
     static bool Free(CharacterTable table, int slot, HashSet<int> taken)

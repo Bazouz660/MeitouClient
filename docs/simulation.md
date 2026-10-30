@@ -660,7 +660,9 @@ relations, shared targets, player self-defence as a [decision step](#decision-st
 living character's senses (`SenseBlock`, read through `CharacterFacts.Senses`; [perception](game/perception.md#senses)): entries, the `numEnemies` / neutral / ally counts, the threats
 list and the threat sums. The fights read them: target choice (`CombatSystem.ChooseTarget`), Self preservation's threat level and the immediate threat (`CombatSystem.ThreatLevel`,
 `ImmediateThreat`), the urgent turret job (step 3), the chase give-up, playing dead, the arrival lines and IS_OUTNUMBERED. Then, for a character that may attack on sight, the look picks
-the best `Combat.TargetScore` among the entries it saw or heard (the original's attack-on-sight finder), not the nearest. Without the Aggro part the look keeps the senses only.
+the best `Combat.TargetScore` among the entries it saw or heard (the original's attack-on-sight finder), not the nearest. Its squad mates within twice their own R of the target share the
+sighting ([squad-shared sightings](game/perception.md)), not the attack: each joins only when its own finder takes the target (`AggroSystem.Takes`: its stance and goals, the relations, a
+holder's post test), so a 143-only or Passive mate stays. Without the Aggro part the look keeps the senses only.
 Being taken as a target is answered the same tick when it alerts ([being targeted](game/combat.md#fight-lifecycle-and-orders)), the rest every 15 ticks;
 free squad mates within `JoinRange` (250, engine choice; the original's joiner must sense the mate) join an attacked member's defence each check even while it is
 already fighting or down (engine rule), against an attacker within 150 of it (`AI::findAttackerOf`); an NPC with an AI joins this way only with a protect goal
