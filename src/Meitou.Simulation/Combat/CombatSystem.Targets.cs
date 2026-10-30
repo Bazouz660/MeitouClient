@@ -16,14 +16,20 @@ public sealed partial class CombatSystem
         public CharacterCold Cold;
         public bool Player, Hold, Prone, Animal;
         public Vector2 HoldPoint;
+        /// <summary>The AI task's target whose attackers the chooser protects (a bodyguard's), -1: none.</summary>
+        public int Protectee;
         public int Best;
         public float BestScore;
     }
 
+    /// <summary>The score a candidate of the lists must beat (<c>chooseAttackTarget</c>'s floor <c>DAT_1416abef4</c> = -100, <b>Verified</b>).</summary>
+    const float PickFloor = -100;
+
     /// <summary>
-    /// A fighter's target choice (<c>CombatClassAI::chooseAttackTarget</c>, scored by <see cref="TargetScore"/>): its current target (when <paramref name="keep"/>), the ones
-    /// fighting it, and, unless it is Passive, the ones fighting its squad mates within <see cref="RetaliationSystem.JoinRange"/> (engine reading of the protectee's attackers:
-    /// every mate counts). Every candidate fights someone of its side, so the leave-alone test holds. When none of them qualifies, the enemies it senses now
+    /// A fighter's target choice (<c>CombatClassAI::chooseAttackTarget</c> <c>FUN_140666ee0</c>, <b>Verified</b>; docs/game/combat.md "Target selection"), scored by <see cref="TargetScore"/>:
+    /// the best over its lists that scores above <see cref="PickFloor"/>. The lists: the attackers of its AI task's target, which the original holds only for the goals 45 Bodyguard, 17, 87,
+    /// 152 and 124 (<c>FUN_14050ca70</c>; Meitou: a bodyguard's protectee, its attackers sensed by the chooser or the protectee), and the chooser's own attackers; a crippled candidate is
+    /// left out of them. Meitou also keeps its current target as a candidate when <paramref name="keep"/> (the caller's sense test). When none qualifies, the enemies it senses now
     /// (<see cref="AggroSystem.SensedEnemies"/>, the original's <c>FUN_14059fa70</c>; the aggro mode it is gated on is taken as 0, aggressive). Reads the last tick's state only;
     /// -1 when none qualifies.
     /// </summary>
@@ -32,29 +38,25 @@ public sealed partial class CombatSystem
         var table = world.Characters;
         var prev = table.Previous;
         bool hold = Orders.Holding(cold) && !s.Ranged;
+        int protectee = cold.Guarding && table.TryResolveNext(cold.FollowOrder, out int p) && p != i ? p : -1;
         var q = new Choice
         {
             Self = i, Current = s.TargetSlot, Cold = cold, Player = cold.IsPlayer, Hold = hold, Prone = cold.Medical!.Prone, Animal = cold.Fighter!.IsAnimal,
-            HoldPoint = hold ? Orders.HoldPointOf(cold, prev[i].Position) : default, Best = -1, BestScore = float.NegativeInfinity,
+            HoldPoint = hold ? Orders.HoldPointOf(cold, prev[i].Position) : default, Protectee = protectee, Best = -1, BestScore = PickFloor,
         };
-        // The current target first, so a tie keeps it (the caller's sense test; the others are sensed: an attacker is put in the senses of whom it attacks).
+        // The current target first, so a tie keeps it.
         if (keep) Consider(world, ref q, s.TargetSlot, false);
-        int generation = prev[i].Generation;
-        foreach (var (_, _, _, a) in index.AttackersOf(i)) if (read[a].TargetGeneration == generation) Consider(world, ref q, a, false);
-        if (!Orders.Has(cold, CharacterOrders.Passive) && cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { } squad)
+        if (protectee >= 0)
         {
-            foreach (var m in squad.Members)
-            {
-                int ms = m.Slot;
-                if (ms == i || !table.IsAlive(m)) continue;
-                float dx = prev[ms].Position.X - prev[i].Position.X, dz = prev[ms].Position.Z - prev[i].Position.Z;
-                if (dx * dx + dz * dz > RetaliationSystem.JoinRange * RetaliationSystem.JoinRange) continue;
-                foreach (var (_, _, _, a) in index.AttackersOf(ms))
-                    if (read[a].TargetGeneration == m.Generation) Consider(world, ref q, a, read[ms].TargetSlot != a);
-            }
+            int pg = prev[protectee].Generation;
+            foreach (var (_, _, _, a) in index.AttackersOf(protectee))
+                if (read[a].TargetGeneration == pg && !Crippled(table, a) && (Senses(world, i, cold, a) || table.Cold(protectee) is { } pc && Senses(world, protectee, pc, a))) Consider(world, ref q, a, false);
         }
+        int generation = prev[i].Generation;
+        foreach (var (_, _, _, a) in index.AttackersOf(i)) if (read[a].TargetGeneration == generation && !Crippled(table, a)) Consider(world, ref q, a, false);
         if (q.Best < 0 && world.SystemOf<AggroSystem>() is { } aggro)
         {
+            q.BestScore = float.NegativeInfinity;
             var found = sensedEnemies ??= [];
             found.Clear();
             aggro.SensedEnemies(world, i, cold, found);
@@ -62,6 +64,9 @@ public sealed partial class CombatSystem
         }
         return q.Best;
     }
+
+    /// <summary>The chooser's lists leave out a crippled candidate (Character vslot 0x360, the crippled flag: <see cref="Bodies.MedicalState.Crawling"/>).</summary>
+    static bool Crippled(CharacterTable table, int c) => table.Cold(c)?.Medical is { Crawling: true };
 
     [ThreadStatic] static List<int>? sensedEnemies;
 
@@ -76,7 +81,7 @@ public sealed partial class CombatSystem
         var table = world.Characters;
         var prev = table.Previous;
         if ((uint)subject >= (uint)prev.Length || table.Cold(looker) is not { Fighter: { } fighter, Medical: { } medical } cold) return -1;
-        var q = new Choice { Self = looker, Current = -1, Cold = cold, Player = cold.IsPlayer, Prone = medical.Prone, Animal = fighter.IsAnimal, Best = -1, BestScore = float.NegativeInfinity };
+        var q = new Choice { Self = looker, Current = -1, Cold = cold, Player = cold.IsPlayer, Prone = medical.Prone, Animal = fighter.IsAnimal, Protectee = -1, Best = -1, BestScore = float.NegativeInfinity };
         bool Joinable(int c)
         {
             if (table.Cold(c) is not { } tc) return false;
@@ -120,7 +125,8 @@ public sealed partial class CombatSystem
             ChooserAttacks = c == q.Current,
             Taunt = Orders.Has(tc, CharacterOrders.Taunt),
             Passive = Orders.Has(tc, CharacterOrders.Passive),
-            Protect = protect && attackers < 2,
+            // +10 for one on the AI task's target (the protectee) that does not fight it back, with under two attackers (FUN_14059e300).
+            Protect = (protect || q.Protectee >= 0 && o.TargetSlot == q.Protectee && read[q.Protectee].TargetSlot != c) && attackers < 2,
             Distance = MathF.Sqrt(dx * dx + dz * dz),
             Fighting = o.TargetSlot >= 0,
             Gunner = tc.Gunning is not null,
