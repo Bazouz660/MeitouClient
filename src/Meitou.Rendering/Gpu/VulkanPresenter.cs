@@ -118,8 +118,14 @@ public sealed unsafe class VulkanPresenter : IDisposable
         blit.DstOffsets[0] = new Offset3D(0, flip ? (int)extent.Height : 0, 0);
         blit.DstOffsets[1] = new Offset3D((int)extent.Width, flip ? 0 : (int)extent.Height, 1);
         vk.CmdBlitImage(cb, ctx.Device.NativeImage(src), ImageLayout.General, dst, ImageLayout.TransferDstOptimal, 1, &blit, Filter.Nearest);
-        Barrier(cb, dst, ImageLayout.TransferDstOptimal, ImageLayout.PresentSrcKhr, PipelineStageFlags2.BlitBit, AccessFlags2.TransferWriteBit,
-            PipelineStageFlags2.BottomOfPipeBit, AccessFlags2.None);
+        // Through AMD's swapchain the image is a replacement back buffer that its UI composition samples (it expects shader-read layout) and it moves the
+        // real swapchain image to present itself; the next frame's Undefined -> TransferDst barrier discards the contents either way.
+        if (FrameGeneration is not null)
+            Barrier(cb, dst, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal, PipelineStageFlags2.BlitBit, AccessFlags2.TransferWriteBit,
+                PipelineStageFlags2.AllCommandsBit, AccessFlags2.ShaderSampledReadBit);
+        else
+            Barrier(cb, dst, ImageLayout.TransferDstOptimal, ImageLayout.PresentSrcKhr, PipelineStageFlags2.BlitBit, AccessFlags2.TransferWriteBit,
+                PipelineStageFlags2.BottomOfPipeBit, AccessFlags2.None);
         ctx.EndNative(list);
         var wait = acquired[device.Frames.Slot];
         var signal = rendered[imageIndex];
