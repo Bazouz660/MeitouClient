@@ -48,7 +48,13 @@ public sealed record ContainerSpot(string Id, string Record, Vector3 Position, i
 /// </summary>
 public sealed record CageSpot(string Id, string Record, Vector3 Position, int Owner, bool Locked, CharacterId Occupant, int Level = 0, float Yaw = 0, bool OccupantSelection = false);
 
-public sealed record DoorPick(string Id, string Building, int Door, int Owner, Vector3 Position, Vector3 Slide = default);
+public sealed record DoorPick(string Id, string Building, int Door, int Owner, Vector3 Position, Vector3 Slide = default)
+{
+    /// <summary>The BUILDING record whose door it is, where that building stands and its yaw: the frame of its collision (<c>NavDoorGeometry.Shape</c>).</summary>
+    public string HostRecord { get; init; } = "";
+    public Vector3 Origin { get; init; }
+    public float Yaw { get; init; }
+}
 
 /// <summary>The door's motion state as saved in <c>state&lt;i&gt;</c> (docs/game/locks.md "Doors"; not the DoorState enum): 0 closed, 1 open, 2 opening, 3 closing.</summary>
 public enum DoorMotion : byte { Closed = 0, Open = 1, Opening = 2, Closing = 3 }

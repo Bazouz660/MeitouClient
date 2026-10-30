@@ -474,6 +474,7 @@ sealed partial class GameHost
             hud.AboveViewedFloor = AboveViewedFloor;
             hud.GroundItemShape = GroundShape;
             hud.GroundItemHidden = hiddenGround.Contains;
+            hud.DoorShape = (record, door) => nav?.Walkability.DoorGeometry?.Shape(record, door) ?? [];
             hoverOutline = new HoverOutlineRenderer(ctx);
             moveMarker = MarkerRenderer.Create(ctx, assets.Find);
             hud.Markers = moveMarker;

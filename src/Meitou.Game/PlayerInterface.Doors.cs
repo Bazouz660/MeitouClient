@@ -9,32 +9,37 @@ namespace Meitou.Game;
 /// </summary>
 sealed partial class PlayerInterface
 {
-    /// <summary>How near the pointer a door leaf's projected centre must be, in pixels (an engine choice: the doors are picked by their centre, not their collision).</summary>
-    const float DoorPickPixels = 40;
     /// <summary>How much of the way to the leaf a building's own collision may take before the door counts as hidden (the leaf sits in its building's wall).</summary>
     const float DoorPickSlack = 10;
 
-    /// <summary>The door whose leaf centre projects nearest the pixel within <see cref="DoorPickPixels"/>, if any, and is not hidden behind another wall; locked or not. A broken door counts only when it is the player's (it takes the repair order).</summary>
+    /// <summary>The door's collision triangles by its BUILDING record and index, in that building's frame with the leaf closed (the host sets it; null: no door is picked).</summary>
+    public Func<string, int, IReadOnlyList<(Vector3[] Vertices, int[] Indices)>>? DoorShape { get; set; }
+
+    /// <summary>
+    /// The door whose leaf's collision the ray meets nearest, where the leaf has slid to, if any and not hidden behind another wall; locked or not (the original's pick hits a door's
+    /// collision, group 5, docs/game/ui-input.md "Building picking and selection"). One without collision cannot be picked. A broken door counts only when it is the player's (it
+    /// takes the repair order).
+    /// </summary>
     (DoorPick Door, bool Locked)? PickDoor(Vector2 pixel) => PickDoorAt(pixel)?.Pick;
 
-    /// <summary><see cref="PickDoor"/> with the ray distance to the leaf's centre.</summary>
+    /// <summary><see cref="PickDoor"/> with the ray distance to the hit.</summary>
     ((DoorPick Door, bool Locked) Pick, float T)? PickDoorAt(Vector2 pixel)
     {
-        if (Ray(pixel) is not { } ray) return null;
+        if (Ray(pixel) is not { } ray || DoorShape is not { } shapeOf) return null;
         var snapshot = session.CurrentSnapshot;
         ((DoorPick, bool), float)? best = null;
-        float bestDistance = DoorPickPixels;
+        float bestT = float.MaxValue;
         foreach (var door in snapshot.DoorPicks)
         {
             // A door missing from the published table is closed and unlocked. The leaf is where it has slid to (linear in the open amount: exact at closed and open).
             var state = snapshot.Doors.GetValueOrDefault((door.Building, door.Door));
-            var leaf = door.Position + door.Slide * state.Open;
-            if (Project(leaf) is not { } at) continue;
-            float d = Vector2.Distance(at, pixel);
-            if (d >= bestDistance) continue;
-            float t = Vector3.Distance(ray.Origin, leaf);
-            if (state.Broken && door.Owner != session.World.Player.Faction || Hidden(ray, t - DoorPickSlack)) continue;
-            (best, bestDistance) = (((door, state.Locked), t), d);
+            if (state.Broken && door.Owner != session.World.Player.Faction) continue;
+            var mesh = shapeOf(door.HostRecord, door.Door);
+            if (mesh.Count == 0) continue;
+            var at = door.Origin + door.Slide * state.Open;
+            var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, door.Yaw);
+            if (RayNears(ray, mesh, at, turn) && RayMesh(ray, mesh, at, turn) is { } t && t < bestT && !Hidden(ray, t - DoorPickSlack))
+                (best, bestT) = (((door, state.Locked), t), t);
         }
         return best;
     }

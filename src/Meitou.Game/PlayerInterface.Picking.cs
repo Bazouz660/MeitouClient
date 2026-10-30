@@ -154,7 +154,7 @@ sealed partial class PlayerInterface
     /// <summary>
     /// The right button's target under the pixel, with characters selected (docs/game/ui-input.md "Building picking and selection"): the nearest along the ray of a character with a quick
     /// order, a ground item, a container, a door, a rock and a site that is an object (unfinished, a machine, storage, furnace or turret), as the original's pick walks its hits nearest first.
-    /// A door's pixel magnet only decides whether it is a candidate; its distance is to its middle. What a building seen from outside hides is left out (each
+    /// What a building seen from outside hides is left out (each
     /// helper's <see cref="Hidden"/> test, the original's floor rule). A plain building is not a candidate: it takes the click only when nothing is (<see cref="SitePress"/>). Hover and click
     /// share it, as in the original.
     /// </summary>

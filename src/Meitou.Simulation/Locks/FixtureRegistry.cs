@@ -65,7 +65,7 @@ public sealed partial class FixtureRegistry
     IReadOnlyList<DoorPick>? doorPicks;
 
     /// <summary>Every door, for the host's picking (<see cref="PublishedDoors"/> leaves closed unlocked town doors out); rebuilt (serial phases) only when a building registers or goes.</summary>
-    public IReadOnlyList<DoorPick> DoorPicks => doorPicks ??= [.. all.Where(f => f.Kind == FixtureKind.Door).Select(f => new DoorPick(f.Id, f.Building, f.DoorIndex, f.Owner, DoorSpotOf(f)?.Centre ?? f.Position, DoorSpotOf(f)?.Slide ?? Vector3.Zero))];
+    public IReadOnlyList<DoorPick> DoorPicks => doorPicks ??= [.. all.Where(f => f.Kind == FixtureKind.Door).Select(f => new DoorPick(f.Id, f.Building, f.DoorIndex, f.Owner, DoorSpotOf(f)?.Centre ?? f.Position, DoorSpotOf(f)?.Slide ?? Vector3.Zero) { HostRecord = f.HostRecordId, Origin = f.Position, Yaw = f.Yaw })];
 
     /// <summary>The doors of each building, rebuilt with <see cref="DoorPicks"/> (both in the serial phases; read in parallel ones after).</summary>
     public ILookup<string, Fixture> DoorsByBuilding => doorsByBuilding ??= all.Where(f => f.Kind == FixtureKind.Door).ToLookup(f => f.Building, StringComparer.Ordinal);
