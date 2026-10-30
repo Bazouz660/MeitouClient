@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Meitou.Data.Save;
 using Meitou.Data.World;
 using Meitou.Rendering.Gpu;
 
@@ -246,6 +247,29 @@ public sealed unsafe partial class TerrainDecalRenderer
     {
         surfaces.Clear();
         surfacePools.Clear();
+    }
+
+    /// <summary>The decals kept for the surfaces as a save holds them (<see cref="SaveSurfaceDecals"/>), oldest first, each with its life left.</summary>
+    public IEnumerable<SurfaceBloodDecal> SavedSurfaces =>
+        surfaces.Select(d => new SurfaceBloodDecal(d.Type, (byte)d.Variant, d.Centre, d.Angle, d.Size, d.Expires - surfaceClock, d.Colour, d.Floor));
+
+    /// <summary>
+    /// Puts back the decals a save held (after <see cref="ClearSurfaces"/>, a new world): each with its life left, the newest kept when over <see cref="MaxSurfaces"/>.
+    /// None while the switch is off; one whose texture is not loaded is skipped. A pool no longer grows (the bleeding character is not kept).
+    /// </summary>
+    public void LoadSurfaces(IReadOnlyList<SurfaceBloodDecal> saved)
+    {
+        if (!surfacesOn) return;
+        for (int i = Math.Max(0, saved.Count - MaxSurfaces); i < saved.Count; i++)
+        {
+            var s = saved[i];
+            if ((int)s.Type >= sprites.Length || s.Variant >= sprites[(int)s.Type].Length || s.Life <= 0 || s.Size <= 0) continue;
+            Keep(new SurfaceDecal
+            {
+                Type = s.Type, Variant = s.Variant, Centre = s.Centre, Angle = s.Angle, Size = s.Size, Colour = s.Colour, Floor = s.Floor,
+                Expires = surfaceClock + s.Life, At = new Vector2(s.Centre.X, s.Centre.Z),
+            });
+        }
     }
 
     /// <summary>Ages the decals by <paramref name="dt"/> seconds of game time; those whose life ran out go.</summary>

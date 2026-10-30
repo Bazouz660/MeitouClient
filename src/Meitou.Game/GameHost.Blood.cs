@@ -155,13 +155,17 @@ sealed partial class GameHost
         store.Clear();
         gpu?.Decals?.ClearSurfaces();
         world.BloodMarks = bloodQueue;
-        if (saved is not null) store.Load(SaveDecals.Read(saved));
+        if (saved is null) return;
+        store.Load(SaveDecals.Read(saved));
+        gpu?.Decals?.LoadSurfaces(SaveSurfaceDecals.Read(saved));   // the bloodsurfaces switch's marks (Meitou-only keys)
     }
 
-    /// <summary>The store's decals into the save's TERRAIN_DECALS record (with <c>Blood</c> off the record keeps what the loaded save had).</summary>
+    /// <summary>The store's decals and the surfaces' into the save's TERRAIN_DECALS record (with <c>Blood</c> off the record keeps what the loaded save had).</summary>
     void WriteDecals(SaveGame game)
     {
-        if (decalStore is { } store && game.Decals is { } record) SaveDecals.Write(record, store.All);
+        if (decalStore is not { } store || game.Decals is not { } record) return;
+        SaveDecals.Write(record, store.All);
+        if (gpu?.Decals is { } decals) SaveSurfaceDecals.Write(record, decals.SavedSurfaces);
     }
 
     /// <summary>0xRRGGBB as the decal's ABGR colour bytes (alpha 0).</summary>
