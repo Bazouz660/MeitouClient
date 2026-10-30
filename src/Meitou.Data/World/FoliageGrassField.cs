@@ -40,6 +40,9 @@ public static class FoliageGrassField
         prefixes = new int[PrefixSteps + 1];
         int candidates = (int)(grass.PerSquareUnit * densitySetting * size * size);
         if (candidates <= 0) return [];
+        // Where the patch's density is 0 throughout the page every candidate is dropped (it keeps a blade only for a random number below the density), so none is drawn:
+        // most pages of a zone's patches, and most of a town's loading-screen grass time.
+        if (!AnyDensity(patch, x0, z0, size)) return [];
         uint seed = FoliageNoise.Hash((int)MathF.Floor(x0), (int)MathF.Floor(z0)) ^ (uint)FoliageRandom.LeadingInteger(grass.StringId) * 2654435761u ^ (uint)patch.Channel;
         var rng = random ??= new FoliageRandom(seed);
         rng.Seed(seed);
@@ -75,6 +78,21 @@ public static class FoliageGrassField
         float at = Math.Clamp(fraction, 0, 1) * PrefixSteps;
         int i = Math.Min((int)at, PrefixSteps - 1);
         return prefixes[i] + (int)((prefixes[i + 1] - prefixes[i]) * (at - i));
+    }
+
+    /// <summary>Whether a sample of the patch's density map that <see cref="DensityAt"/> can read anywhere in the square is above 0 (a cell's margin on each side).</summary>
+    static bool AnyDensity(FoliageGrassPatch patch, float x0, float z0, float size)
+    {
+        const int n = FoliageGround.Size;
+        if (x0 + size < patch.X0 || x0 > patch.X1 || z0 + size < patch.Z0 || z0 > patch.Z1) return false;
+        float su = (n - 1) / (patch.X1 - patch.X0), sv = (n - 1) / (patch.Z1 - patch.Z0);
+        int i0 = Math.Clamp((int)MathF.Floor((x0 - patch.X0) * su) - 1, 0, n - 1), i1 = Math.Clamp((int)MathF.Floor((x0 + size - patch.X0) * su) + 2, 0, n - 1);
+        int j0 = Math.Clamp((int)MathF.Floor((z0 - patch.Z0) * sv) - 1, 0, n - 1), j1 = Math.Clamp((int)MathF.Floor((z0 + size - patch.Z0) * sv) + 2, 0, n - 1);
+        var d = patch.Density;
+        for (int j = j0; j <= j1; j++)
+            for (int i = i0; i <= i1; i++)
+                if (d[j * n + i] != 0) return true;
+        return false;
     }
 
     /// <summary>The patch's density (0..1) at a world point, bilinear over its 129² map; 0 outside the zone.</summary>
