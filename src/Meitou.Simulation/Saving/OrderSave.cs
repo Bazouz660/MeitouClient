@@ -100,7 +100,7 @@ public static class OrderSave
     }
 
     /// <summary>
-    /// Makes the orders a load read the character's queue (serial phases, from the decision step): nothing is started, and the front is tried like any new order. An order whose row no system
+    /// Makes the orders a load read the character's queue (serial phases, from the decision step or a queued order, <see cref="PlayerOrders.Give"/>): nothing is started, and the front is tried like any new order. An order whose row no system
     /// owns, whose target character or site is not in the world, or whose handle named nothing is left out, as the queue pops an order that is <see cref="OrderVerdict.Gone"/>.
     /// </summary>
     internal static void Restore(World world, int slot, CharacterCold cold)

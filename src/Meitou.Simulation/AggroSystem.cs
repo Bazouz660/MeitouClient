@@ -416,6 +416,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         {
             var table = world.Characters;
             int t = owner.Offered(world, slot);
+            if (t < 0) return;
             var targetId = table.IdOf(t);
             world.Defer(new AttackOrder([table.IdOf(slot)], targetId) { Tick = world.Tick + 1 });
             owner.Started++;

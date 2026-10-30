@@ -128,6 +128,12 @@ public static class PlayerOrders
     {
         var cold = world.Characters.Cold(slot)!;
         var q = cold.OrderQueue;
+        // A queue loaded and not restored yet (OrderSave.Restore): a queued order goes behind it, any other replaces it.
+        if (cold.SavedOrders is not null)
+        {
+            if (queued) Saving.OrderSave.Restore(world, slot, cold);
+            else cold.SavedOrders = null;
+        }
         if (!queued) q.Clear();
         else Settle(world, slot);
         q.Add(order);
