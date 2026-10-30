@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 using Meitou.Content;
 using Meitou.Data;
 using Meitou.Data.Characters;
@@ -292,12 +295,12 @@ internal sealed class CharacterContent : IDisposable
             // 116 for a 20 unit tall body), which would keep them at full detail for another hundred units: the model's own extent bounds it.
             radius = Math.Min(radius, Math.Max(model.Radius, 1));
             // Hair and beards (HairLodScale) are alpha-tested cards: a collapse merges cards and strands go while the surface hardly moves, so the deviation underrates it.
-            var levels = close ? [FullLevel(mesh)] : GeneratedLevels(mesh, model, radius, pixelsPerRadian * lodScale, LodSettings);
+            var levels = close ? [FullLevel(mesh)] : GeneratedLevels(path, mesh, model, radius, pixelsPerRadian * lodScale, LodSettings);
             // Shadow-only levels (the body, which has no cut-outs): built without the texture guard, whose refusals stop the body at about 1300 triangles, so a crowd's
             // shadows can be coarser than its picture; never picked by the picture (distance infinity), the depth pass chooses among them by ShadowDistances.
             float[]? shadowDistances = null;
             int shadowFirst = levels.Count;
-            if (shadowLevels && !close && GeneratedLevels(mesh, model, radius, pixelsPerRadian, ShadowSettings) is { Count: > 1 } shadow)
+            if (shadowLevels && !close && GeneratedLevels(path, mesh, model, radius, pixelsPerRadian, ShadowSettings) is { Count: > 1 } shadow)
             {
                 shadowDistances = [.. shadow.Select(l => l.Distance)];
                 levels.AddRange(shadow.Skip(1).Select(l => l with { Distance = float.PositiveInfinity }));
@@ -628,11 +631,11 @@ internal sealed class CharacterContent : IDisposable
     /// <summary>A mesh's own triangles, its full level.</summary>
     static MeshLodLevel FullLevel(OgreMesh mesh) => new(0, mesh.SubMeshes.Select(s => (uint[]?)s.Indices.Indices).ToList());
 
-    static List<MeshLodLevel> GeneratedLevels(OgreMesh mesh, Model model, float radius, float pixelsPerRadian, FoliageLodBuilder.Settings settings)
+    static List<MeshLodLevel> GeneratedLevels(string path, OgreMesh mesh, Model model, float radius, float pixelsPerRadian, FoliageLodBuilder.Settings settings)
     {
         var levels = new List<MeshLodLevel> { FullLevel(mesh) };
         var parts = model.Parts.Where(p => p.Indices.Length > 0).ToList();
-        if (parts.Count == 0 || FoliageLodBuilder.Build(model, radius, settings) is not { } set) return levels;
+        if (parts.Count == 0 || BuildLevels(path, model, parts, radius, settings) is not { } set) return levels;
         var distances = ObjectLodGen.Distances(set, ObjectLodGen.TriangleExtent(parts), radius, pixelsPerRadian);
         for (int k = 1; k < set.Levels; k++)
         {
@@ -641,6 +644,42 @@ internal sealed class CharacterContent : IDisposable
             levels.Add(new MeshLodLevel(distances[k], subs));
         }
         return levels;
+    }
+
+    /// <summary>
+    /// The disk cache of the generated levels, <c>%LOCALAPPDATA%\Meitou\charlods</c> (<c>MEITOU_CHARACTER_LOD_CACHE</c>; neither read nor written with <c>--no-load-cache</c>), as
+    /// the objects' (<see cref="ObjectLodGen.Root"/>): building the levels is nearly all of a mesh's preparation, and a town's crowd took about 40 s of worker time at every load.
+    /// </summary>
+    public static string LodRoot { get; set; } = Environment.GetEnvironmentVariable("MEITOU_CHARACTER_LOD_CACHE")
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Meitou", "charlods");
+
+    /// <summary>Bumped when what the character levels are built from changes (with <see cref="FoliageLodBuilder.Version"/>, the cache's key).</summary>
+    const int LodVersion = 1;
+
+    /// <summary>
+    /// <see cref="FoliageLodBuilder.Build(Model, float, FoliageLodBuilder.Settings)"/> through <see cref="LodRoot"/>, keyed by all the build reads: the parts' vertices and
+    /// indices, the radius and the settings (a mesh read for another bone count or limb marking has an entry of its own).
+    /// </summary>
+    static FoliageLodSet? BuildLevels(string path, Model model, List<ModelPart> parts, float radius, FoliageLodBuilder.Settings settings)
+    {
+        if (Meitou.Data.World.LoadCaches.Disabled) return FoliageLodBuilder.Build(model, radius, settings);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var part in parts)
+        {
+            hash.AppendData(MemoryMarshal.AsBytes(part.Vertices.AsSpan()));
+            hash.AppendData(MemoryMarshal.AsBytes(part.Indices.AsSpan()));
+        }
+        string Number(float f) => f.ToString("R", CultureInfo.InvariantCulture);
+        hash.AppendData(Encoding.UTF8.GetBytes($"{Number(radius)} {string.Join(',', settings.Fractions.Select(Number))} {settings.Floor} {Number(settings.MaxRelativeError)} " +
+            $"{Number(settings.MaxNormalAngle)} {Number(settings.MinGain)} {settings.UvAware} {settings.TwoSided}"));
+        int version = FoliageLodBuilder.Version * 100 + LodVersion;
+        // The file is named by the mesh and a hash of that key (PathFor hashes the bytes it is given).
+        string file = FoliageLodCache.PathFor(path, hash.GetHashAndReset(), LodRoot, version);
+        var (hit, cached) = FoliageLodCache.TryLoad(file, parts.Count, version);
+        if (hit) return cached;
+        var built = FoliageLodBuilder.Build(model, radius, settings);
+        FoliageLodCache.Save(file, built, parts.Count, version);
+        return built;
     }
 
     /// <summary>Assembles the asset for <paramref name="c"/>; null when its body mesh or skeleton cannot be found.</summary>

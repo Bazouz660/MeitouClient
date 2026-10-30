@@ -163,7 +163,7 @@ Authority: `src/Meitou.Rendering/WorldFrame.cs` (`Parse`, `Usage`), `src/Meitou.
 | `--range-large <u>` | units | 50000 | Foliage draw range of the large size class. |
 | `--distant-range <zones>` | zones | 10 | How far distant towns are drawn; 0 for none. |
 | `--impostor-budget <MB>` | MB | 8% of video memory (5% integrated), 48 to 1024 | Video memory for resident impostor atlases. |
-| `--no-load-cache` | | off | Do not read or write the load caches (foliage layout cache). |
+| `--no-load-cache` | | off | Do not read or write the load caches (foliage layout and character LOD caches). |
 | `--low-end` | | off | Potato-PC preset: short draw distances, no shadows, reflections, AO, relief, light shafts or AA, 0.83 render scale, sparse grass and particles. Options after it override it. |
 
 ### Post-processing and upscaling (`PostProcessOptions.cs`)
@@ -276,6 +276,7 @@ These have no user-facing docs; options are from their top-level argument loops.
 | `MEITOU_VK_VALIDATION` | `src/Meitou.Rendering/Gpu/Core/VulkanDeviceOptions.cs` | `1` validation; `sync` adds synchronisation checks; `gpu` adds GPU-assisted checks; `0` off. Unset: caller's default. |
 | `MEITOU_VRAM_GUARD` | `src/Meitou.Rendering/WorldFrame.cs`, `src/Meitou.Game/GameHost.Metal.cs` | `0` turns the memory-pressure guard off. On by default. |
 | `MEITOU_OBJECT_LOD_CACHE` | `src/Meitou.Rendering/ObjectLodGen.cs` | Folder for the object LOD cache (default under `%LOCALAPPDATA%\Meitou`). |
+| `MEITOU_CHARACTER_LOD_CACHE` | `src/Meitou.Rendering/Characters/CharacterContent.cs` | Folder for the character LOD cache (default under `%LOCALAPPDATA%\Meitou`). |
 | `MEITOU_IMPOSTOR_CACHE` | `src/Meitou.Rendering/Impostors/ImpostorCache.cs` | Impostor cache folder. |
 | `MEITOU_SSAO_STAMPS` | `src/Meitou.Rendering/PostProcess.cs` | `1`: GPU timestamps around the SSAO pass (diagnostic). |
 | `MEITOU_SHAFT_STAMPS` | `src/Meitou.Rendering/PostProcess.Shafts.cs` | `1`: GPU timestamps around the light-shaft pass (diagnostic). |
