@@ -136,8 +136,8 @@ public class DecisionTests
     }
 
     /// <summary>
-    /// 15 Protect allies for a player character (FUN_140599b90, FUN_14099ca10): any sensed ally of the player's faction that holds a fight target is joined, whatever its squad, and the more
-    /// weakly the farther it is (1 within about 3 units, 0.1 from 30). Catches the old squad-and-range join with its fixed desire.
+    /// 15 Protect allies for a player character (FUN_140599b90, FUN_14099ca10): any sensed ally of the player's faction under attack is joined, whatever its squad, at its fight threat
+    /// (FUN_14099a190) weighted by the distance (1 within about 3 units, 0.1 from 30). Catches the old squad-and-range join with its fixed desire.
     /// </summary>
     [Fact]
     public void A_player_character_joins_a_fighting_allys_fight_by_goal_15_weighted_by_distance()
@@ -146,13 +146,25 @@ public class DecisionTests
         var (far, mate) = (rig.Fighter, rig.Mate);   // 40 units apart
         var at = rig.World.Characters.Next[mate.Slot].Position;
         var near = rig.Add(at.X + 2, at.Z, player: true);   // in no squad
+        rig.Cold(rig.Enemy).Medical!.KnockOut(100000);   // the rig's own enemy still attacks the fighter: the fighter would be an ally under attack too
         AttackMate(rig);
         var goal = ProtectAllies(rig);
-        RunUntil(rig, () => rig.Task(near) == CharacterTask.Attack && rig.Task(far) == CharacterTask.Attack, 2 * RetaliationSystem.CheckEveryTicks + 2, "both joining the mate's fight");
+        var senses = rig.World.SystemOf<AggroSystem>()!;
+        float Threat() => rig.Combat.FightThreat(rig.World, mate.Slot, senses.SensesOf(mate.Slot));
+        // Each one's desire as it starts, before the far one has run up: the mate's threat, x1 for the near one, x0.1 for the one 40 away.
+        float? nearAt = null, farAt = null, nearThreat = null, farThreat = null;
+        for (int t = 0; t < 2 * RetaliationSystem.CheckEveryTicks + 2 && (nearAt is null || farAt is null); t++)
+        {
+            rig.World.RunTick();
+            if (nearAt is null && rig.Task(near) == CharacterTask.Attack) (nearAt, nearThreat) = (goal.Desire(rig.World, near.Slot), Threat());
+            if (farAt is null && rig.Task(far) == CharacterTask.Attack) (farAt, farThreat) = (goal.Desire(rig.World, far.Slot), Threat());
+        }
+        Assert.True(nearAt is not null && farAt is not null, "both join the mate's fight");
         Assert.Equal("15 Protect allies", rig.Cold(far).Decision!.Winner);
         Assert.Equal("15 Protect allies", rig.Cold(near).Decision!.Winner);
-        Assert.InRange(goal.Desire(rig.World, near.Slot), 0.9f, 1.2f);
-        Assert.InRange(goal.Desire(rig.World, far.Slot), 0.1f, 0.2f);
+        Assert.True(nearThreat > 0, "the attacked mate has a fight threat");
+        Assert.InRange(nearAt!.Value, 0.8f * nearThreat!.Value, 1.01f * nearThreat.Value);   // a few units off: the falloff near 1
+        Assert.InRange(farAt!.Value, 0.05f * farThreat!.Value, 0.5f * farThreat.Value);
     }
 
     /// <summary>
@@ -211,7 +223,7 @@ public class DecisionTests
         using var rig = Quiet(senses: true, relations);
         var f = rig.Fighter;
         var at = rig.World.Characters.Next[f.Slot].Position;
-        var ally = rig.Add(at.X + 22, at.Z, player: false);   // allied faction, 22 units off: the falloff 0.52
+        var ally = rig.Add(at.X + 22, at.Z, player: false);   // allied faction, 22 units off: the falloff 0.52, squared 0.27
         var foe = rig.Add(at.X + 34, at.Z, player: false);
         rig.Cold(foe).Faction = 0;
         rig.Say(new Meitou.Simulation.Combat.AttackOrder([foe], ally) { Tick = rig.World.Tick });
@@ -225,7 +237,9 @@ public class DecisionTests
         var goal = ProtectAllies(rig);
         RunUntil(rig, () => rig.Task(f) == CharacterTask.Attack, 2 * RetaliationSystem.CheckEveryTicks + 2, "joining the allies' fight");
         Assert.Equal("15 Protect allies", rig.Cold(f).Decision!.Winner);
-        Assert.InRange(goal.Desire(rig.World, f.Slot), 0.2f, 0.45f);
+        // Squared: below the ally's threat squared (its weight, at most 1, times the threat, squared), not the threat x weight.
+        float threat = rig.Combat.FightThreat(rig.World, ally.Slot, rig.World.SystemOf<AggroSystem>()!.SensesOf(ally.Slot));
+        Assert.InRange(goal.Desire(rig.World, f.Slot), 1e-9f, threat * threat * 1.001f);
     }
 
 

@@ -286,7 +286,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     /// <summary>
     /// 15 Protect allies of a player character (the player faction's <c>AI Goals</c>: priority 3, weight 1, so it comes after the orders and the urgent jobs and before every job; the
     /// chooser's step 4, docs/game/ai-tasks.md "Precedence"). Desire <c>FUN_140599b90</c>, <b>Verified</b>: 0 while Passive or sneaking outside a fight and for a slave holding job 187; else
-    /// the finder's best ally, x0.5 while carrying. The finder <c>FUN_14099ca10</c> (<see cref="BestAlly"/>) takes the player's sensed allies that hold a fight target, weighted by their
+    /// the finder's best ally, x0.5 while carrying. The finder <c>FUN_14099ca10</c> (<see cref="BestAlly"/>) values the player's sensed allies by their fight threat, weighted by their
     /// distance; the plan is 13 Attacking attackers of (<c>AI::findAttackerOf</c>, <see cref="CombatSystem.BestAttackerOf"/>), so the goal needs an attacker within <see cref="ProtectReach"/>
     /// of the ally. Listed before Self preservation (a tie goes to the later goal). It runs while a defence (row 13) is its fight; with no ally left the desire stays at Self preservation's 0.7
     /// (engine: the fight task ends by itself).
@@ -297,8 +297,9 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
         public DecisionStep Step => DecisionStep.Goals;
         public int Key => 15;
 
+        // Passive zeroes it even in a fight (FUN_140599b90, Verified).
         public float Desire(World world, int slot) =>
-            owner.BestAlly(world, slot, out _) is var score && score > 0 ? score : 0.7f;
+            (world.Characters.Cold(slot)!.Orders & CharacterOrders.Passive) != 0 ? 0 : owner.BestAlly(world, slot, out _) is var score && score > 0 ? score : 0.7f;
 
         public DecisionCheck CanRun(World world, int slot)
         {
@@ -323,7 +324,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
 
     /// <summary>
     /// The finder of 15 / 288 for a player character (<c>FUN_14099ca10</c>, <b>Verified</b>): over the sensed entries tagged ALLY (not down or imprisoned) that were seen or heard at the last
-    /// look, each ally whose AI holds a fight target (<c>FUN_14099a190</c>, taken as 1: its value is <b>Unknown</b>) is worth <c>clamp((1000 - d^2) / 990, 0.1, 1)</c> by the squared distance
+    /// look, each ally is worth its fight threat (<c>FUN_14099a190</c>, <see cref="CombatSystem.FightThreat"/>: above 0 while it is attacked, threatened or fighting) x <c>clamp((1000 - d^2) / 990, 0.1, 1)</c> by the squared distance
     /// d^2 between the two (<c>FUN_1409b2380</c>: 1 within 3.2 units, 0.1 from 30); an ally of another faction counts only with <see cref="SquadAi.Help"/> and then the value is squared; a slave
     /// or escaped slave only where the looker may help one (<see cref="SlaveHelpAllowed(World, CharacterCold, Vector3)"/>, tested once, for the first slave met). The best, the first in slot order
     /// on a tie, capped at 1.2; x0.5 while the looker carries someone (<c>FUN_140599b90</c>). 0 when there is none; <paramref name="ally"/> is that one's slot (-1 for none).
@@ -332,20 +333,22 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     {
         ally = -1;
         var table = world.Characters;
-        if (table.Cold(slot) is not { } cold || world.SystemOf<AggroSystem>()?.SensesOf(slot) is not { } senses) return 0;
+        if (table.Cold(slot) is not { } cold || world.SystemOf<AggroSystem>() is not { } aggro || aggro.SensesOf(slot) is not { } senses) return 0;
         var prev = table.Previous;
         bool help = (world.Player.SquadAi & SquadAi.Help) != 0, slaveChecked = false, slaveOk = false;
         float best = 0;
         foreach (var e in senses.Entries)
         {
-            if (!e.Now || (e.Tags & (SenseTag.Ally | SenseTag.Ko | SenseTag.Imprisoned)) != SenseTag.Ally || e.Target == slot || combat.TargetOf(e.Target, e.Generation).Slot < 0) continue;
+            if (!e.Now || (e.Tags & (SenseTag.Ally | SenseTag.Ko | SenseTag.Imprisoned)) != SenseTag.Ally || e.Target == slot) continue;
             if (table.Cold(e.Target) is not { } other) continue;
+            float threat = combat.FightThreat(world, e.Target, aggro.SensesOf(e.Target));
+            if (threat <= 0) continue;
             if (other.SlaveState is 1 or 2)
             {
                 if (!slaveChecked) (slaveChecked, slaveOk) = (true, SlaveHelpAllowed(world, cold, prev[slot].Position));
                 if (!slaveOk) continue;
             }
-            float v = Math.Clamp((Vector3.DistanceSquared(prev[slot].Position, prev[e.Target].Position) - 1000f) / (10f - 1000f), 0.1f, 1f);
+            float v = threat * Math.Clamp((Vector3.DistanceSquared(prev[slot].Position, prev[e.Target].Position) - 1000f) / (10f - 1000f), 0.1f, 1f);
             if (other.Faction != cold.Faction)
             {
                 if (!help) continue;
@@ -354,7 +357,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
             if (v > best) (best, ally) = (v, e.Target);
         }
         if (ally < 0) return 0;
-        best = Math.Min(best, 1.2f);
+        best = Math.Min(best, CombatSystem.ProtectCap);
         return table.Cold(slot)!.Carrying.IsNone ? best : best * 0.5f;
     }
 

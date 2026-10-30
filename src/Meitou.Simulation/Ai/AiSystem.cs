@@ -328,8 +328,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             // Self preservation: the threat level (AI slot 17); Running away: row 35's own (AI slot 55), a goal of the packages that list it.
             AiBehaviour.SelfPreserve => ThreatSource is { } source ? source.ThreatLevel(world, self.Slot, out _) : 0,
             AiBehaviour.Flee => world.Characters.Cold(self.Slot) is { } runner ? SelfPreservation.RunDesire(runner) : 0,
-            // A combat goal: its own desire's zeros and factors, times its finder's factor (1 with a target, AiSystem.Fights.cs).
-            AiBehaviour.Fight => FightDesire(world, self.Slot, type, mind) is var want and > 0 && !FightTargetFor(world, self.Slot, type, mind).IsNone ? want : 0,
+            // A combat goal: its own desire's zeros and factors, times its finder's factor (an attack goal's 1 with a target, a protect goal's fight threat; AiSystem.Fights.cs).
+            AiBehaviour.Fight => FightDesire(world, self.Slot, type, mind) is var want and > 0 ? want * FightPick(world, self.Slot, type, mind).Factor : 0,
             _ => 1,
         };
     }
@@ -812,7 +812,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             case AiBehaviour.Fight:
                 // Stands while the serial step starts the fight on the finder's pick (the combat system walks it there and fights); the request is its own mind's.
                 Become(world, slot, CharacterTask.Idle);
-                mind.FightTarget = FightTargetFor(world, slot, type, mind);
+                mind.FightTarget = FightPick(world, slot, type, mind).Target;
                 mind.FightGoal = type;
                 if (!mind.FightTarget.IsNone) Interlocked.Exchange(ref fighting, 1);
                 break;

@@ -21,8 +21,9 @@ public sealed partial class AiSystem
 
     /// <summary>
     /// A combat goal's desire before its finder (docs/game/ai-tasks.md "Combat goals" and "Desire and commitment"): 16 <c>scoreAttackEnemies</c> is 0 while Passive, sneaking outside a fight or
-    /// not standing; 15 / 288 <c>scoreProtectAllies</c> (<c>FUN_140599b90</c>, <b>Verified</b>) 0 while Passive or sneaking outside a fight and for a slave holding job 187 (Meitou's mark of it:
-    /// a slave with a master squad), x0.5 while carrying (never here: the AI does not run a carrier); the rest 1 (144's 0.5 is its profile's). Engine gates for all: a character that cannot
+    /// not standing; 15 / 288 <c>scoreProtectAllies</c> (<c>FUN_140599b90</c>, <b>Verified</b>) 0 while Passive (even in a fight), while sneaking and not in combat mode and for a slave holding
+    /// job 187 (Meitou's mark of it: a slave with a master squad), x0.5 while carrying (never here: the AI does not run a carrier); the rest 1 (144's 0.5 is its profile's). The finder's factor
+    /// multiplies it (<see cref="FightPick"/>). Engine gates for all: a character that cannot
     /// fight (no working fighter, crawling, or one Self preservation runs away with, <see cref="SelfPreservation.Flees"/>) and a turret's gunner (it keeps to its turret) want none.
     /// </summary>
     static float FightDesire(World world, int slot, TaskType type, AiMind mind)
@@ -38,54 +39,68 @@ public sealed partial class AiSystem
     }
 
     /// <summary>
-    /// The character a combat goal would fight (<see cref="CharacterId.None"/>: the finder's factor 0). Attack goals: <see cref="AggroSystem.FindFoe"/>. Protect goals: <see cref="ProtectTarget"/>.
-    /// Reads only the last tick's state (any thread in the think).
+    /// A combat goal's finder: its factor and the character it would fight (<see cref="CharacterId.None"/> with the factor 0). Attack goals: <see cref="AggroSystem.FindFoe"/>, factor 1 with a
+    /// pick. Protect goals: <see cref="ProtectPick"/>. Reads only the last tick's state (any thread in the think).
     /// </summary>
-    CharacterId FightTargetFor(World world, int slot, TaskType type, AiMind mind) => type switch
+    (float Factor, CharacterId Target) FightPick(World world, int slot, TaskType type, AiMind mind)
     {
-        TaskType.ATTACK_ENEMIES => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.Enemies) ?? CharacterId.None,
-        TaskType.ATTACK_ENEMIES_AND_NEUTRALS => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.EnemiesAndNeutrals) ?? CharacterId.None,
-        TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.Territory) ?? CharacterId.None,
-        TaskType.ATTACK_TROUBLE_MAKERS => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.TroubleMakers) ?? CharacterId.None,
-        _ when Protects(type) => ProtectTarget(world, slot, type, mind),
-        _ => CharacterId.None,
-    };
+        if (Protects(type)) return ProtectPick(world, slot, type, mind);
+        var foe = type switch
+        {
+            TaskType.ATTACK_ENEMIES => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.Enemies),
+            TaskType.ATTACK_ENEMIES_AND_NEUTRALS => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.EnemiesAndNeutrals),
+            TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.Territory),
+            TaskType.ATTACK_TROUBLE_MAKERS => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.TroubleMakers),
+            _ => null,
+        } ?? CharacterId.None;
+        return (foe.IsNone ? 0 : 1, foe);
+    }
 
     /// <summary>
-    /// The protect goals' finders and their plan row 13 (docs/game/ai-tasks.md "Combat goals", <b>Verified</b> finders): 143 PROTECT_OWN_SQUAD (<c>FUN_14099d510</c>) takes a squad mate that
-    /// its last look sensed now (seen or heard, <c>FUN_140855960</c> with flag 1) and whose fight holds a target (<c>FUN_14099a190</c> non-zero), 15 / 288 PROTECT_ALLIES (<c>FUN_14099ca10</c>)
-    /// an entry of its senses tagged ALLY (same faction or relation 50 or more), not down, seen or heard now, holding a target, a slave or escaped slave only where the looker may help one
-    /// (<c>FUN_140997e80</c>, <see cref="RetaliationSystem.SlaveHelpAllowed(World, PopulationData?, Meitou.Data.Gameplay.FactionRelations?, CharacterCold, System.Numerics.Vector3)"/>); then
-    /// row 13 (<c>AI::findAttackerOf</c>, <see cref="Combat.CombatSystem.BestAttackerOf"/>) the protected one's attacker within 150 of it that is not the looker's ally, best by the target score.
-    /// The protected one is the first (squad member order, sense entries in slot order) for which 13 finds an attacker: <c>FUN_14099a190</c>'s value is <b>Unknown</b>, so every candidate counts
-    /// alike (engine choice), and 143's fallback hand list (+0x2f8) is not modelled. Reads only the last tick's state (any thread in the think).
+    /// The protect goals' finders and their plan row 13 (docs/game/ai-tasks.md "Combat goals", <b>Verified</b> finders): 143 PROTECT_OWN_SQUAD (<c>FUN_14099d510</c>) values each squad mate that
+    /// is the looker or that its last look sensed now (seen or heard, <c>FUN_140855960</c> with flag 1), 15 / 288 PROTECT_ALLIES (<c>FUN_14099ca10</c>, the same for both) each entry of its
+    /// senses tagged ALLY (same faction or relation 50 or more), not down, seen or heard now, a slave or escaped slave only where the looker may help one (<c>FUN_140997e80</c>,
+    /// <see cref="RetaliationSystem.SlaveHelpAllowed(World, PopulationData?, Meitou.Data.Gameplay.FactionRelations?, CharacterCold, System.Numerics.Vector3)"/>), by its fight threat
+    /// (<c>FUN_14099a190</c>, <see cref="Combat.CombatSystem.FightThreat"/>; no distance factor for an NPC looker). The best (the first on a tie), capped at 1.2, is the factor; then row 13
+    /// (<c>AI::findAttackerOf</c>, <see cref="Combat.CombatSystem.BestAttackerOf"/>) takes that one's attacker within 150 of it that is not the looker's ally, best by the target score; none
+    /// fails the plan (factor 0). 143's fallback hand list (+0x2f8, x0.1) is not modelled. Reads only the last tick's state (any thread in the think).
     /// </summary>
-    CharacterId ProtectTarget(World world, int slot, TaskType type, AiMind mind)
+    (float Factor, CharacterId Target) ProtectPick(World world, int slot, TaskType type, AiMind mind)
     {
         var table = world.Characters;
         var prev = table.Previous;
-        if (combat is not { } fights || aggro is not { } look || look.SensesOf(slot) is not { } senses || table.Cold(slot) is not { } me) return CharacterId.None;
+        if (combat is not { } fights || aggro is not { } look || look.SensesOf(slot) is not { } senses || table.Cold(slot) is not { } me) return (0, CharacterId.None);
+        int best = -1;
+        float value = 0;
         if (type == TaskType.PROTECT_OWN_SQUAD)
         {
             foreach (var m in mind.Squad.Members)
             {
-                if (m.Slot == slot || (uint)m.Slot >= (uint)prev.Length || !prev[m.Slot].Alive || prev[m.Slot].Generation != m.Generation || !senses.Knows(m, now: true)) continue;
-                if (fights.TargetOf(m.Slot, m.Generation).Slot < 0 || table.Cold(m.Slot) is not { Medical.Incapacitated: false }) continue;
-                int foe = fights.BestAttackerOf(world, m.Slot, slot);
-                if (foe >= 0) return new CharacterId(foe, prev[foe].Generation);
+                if ((uint)m.Slot >= (uint)prev.Length || !prev[m.Slot].Alive || prev[m.Slot].Generation != m.Generation || m.Slot != slot && !senses.Knows(m, now: true)) continue;
+                float v = fights.FightThreat(world, m.Slot, look.SensesOf(m.Slot));
+                if (v > value) (best, value) = (m.Slot, v);
             }
-            return CharacterId.None;
         }
-        foreach (var e in senses.Entries)
+        else
         {
-            int a = e.Target;
-            if (a == slot || !e.Now || (e.Tags & (SenseTag.Ally | SenseTag.Ko)) != SenseTag.Ally || (uint)a >= (uint)prev.Length || !prev[a].Alive || prev[a].Generation != e.Generation) continue;
-            if (fights.TargetOf(a, e.Generation).Slot < 0 || table.Cold(a) is not { Medical.Incapacitated: false } ally) continue;
-            if (ally.SlaveState is 1 or 2 && !RetaliationSystem.SlaveHelpAllowed(world, data, look.Relations, me, prev[slot].Position)) continue;
-            int foe = fights.BestAttackerOf(world, a, slot);
-            if (foe >= 0) return new CharacterId(foe, prev[foe].Generation);
+            bool slaveChecked = false, slaveOk = false;
+            foreach (var e in senses.Entries)
+            {
+                int a = e.Target;
+                if (a == slot || !e.Now || (e.Tags & (SenseTag.Ally | SenseTag.Ko)) != SenseTag.Ally || (uint)a >= (uint)prev.Length || !prev[a].Alive || prev[a].Generation != e.Generation
+                    || table.Cold(a) is not { } ally) continue;
+                if (ally.SlaveState is 1 or 2)
+                {
+                    if (!slaveChecked) (slaveChecked, slaveOk) = (true, RetaliationSystem.SlaveHelpAllowed(world, data, look.Relations, me, prev[slot].Position));
+                    if (!slaveOk) continue;
+                }
+                float v = fights.FightThreat(world, a, look.SensesOf(a));
+                if (v > value) (best, value) = (a, v);
+            }
         }
-        return CharacterId.None;
+        if (best < 0) return (0, CharacterId.None);
+        int foe = fights.BestAttackerOf(world, best, slot);
+        return foe < 0 ? (0, CharacterId.None) : (MathF.Min(value, Combat.CombatSystem.ProtectCap), new CharacterId(foe, prev[foe].Generation));
     }
 
     /// <summary>
