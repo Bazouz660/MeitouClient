@@ -98,8 +98,8 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
     /// (0 front, 1 rear) and a roll in [0, 1); returns the clip (an animation library index) and its length in seconds, or null when none fits. Null: hits play no clip.
     /// </summary>
     public Func<CharacterCold, string, bool, int, float, (int Clip, float Seconds)?>? StumbleChooser { get; set; }
-    /// <summary>How long a woken character gets up (the animation system sets it from <c>standing up 3</c>: its 0.75 s blend and the clip to <c>GetUpEnd</c>); 0: no get-up.</summary>
-    public float GetUpSeconds { get; set; }
+    /// <summary>How long the get-up clip plays (the animation system sets it from <c>standing up 3</c>: its length to <c>GetUpEnd</c> over the record's play speed); 0: no get-up. A ragdoll's bone blend comes before it.</summary>
+    public float GetUpClipSeconds { get; set; }
     /// <summary>The chance that an attack on a character getting up with its fight off knocks it back down, and for how long (<c>AI::underMeleeAttack</c>, 0.1 and 10.0, <b>Verified</b>).</summary>
     public const float KnockDownChance = 0.1f, KnockDownSeconds = 10;
 

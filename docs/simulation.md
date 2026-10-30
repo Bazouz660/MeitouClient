@@ -619,7 +619,7 @@ that left the post test, a player's beyond 400), it fights on without a target u
 not fight back that has under 2 attackers); a crippled one is left out of these lists, and their best must score above -100; not of its faction or squad (the current target excepted).
 A squad mate's attackers are no candidates. With none, the enemies its senses saw or heard at their last look (`CharacterFacts.Senses`, perception.md "Senses"), the current target
 among them with its stubbornness; an NPC's chase may give it up sooner (`AggroSystem`, 24 s unsensed). "Intended aggression ≤ 0" is a fight-off candidate not counting the chooser's faction an enemy (engine
-reading); getting up is `CharacterCold.GettingUpUntil`, from waking for `CombatSystem.GetUpSeconds` (the get-up blend and `standing up 3` to `GetUpEnd`),
+reading); getting up is `CharacterCold.GettingUpUntil`, from waking for the ragdoll blend (only after a whole-body ragdoll) plus `CombatSystem.GetUpClipSeconds` (`standing up 3` to `GetUpEnd` at its play speed; none when carried or in a bed),
 during which it neither walks, works nor fights (Task_GetUp; it counts as staggered for the work systems).
 Only a fighter blocks or dodges. A landed blow on a shackled defender knocks it out 25% of the time (`PutDownKoSeconds` with 0.002: 3 s). A hit on a
 character outside a fight that is getting up does nothing more; on any other (not a gunner) it restarts the task (timer, lift or knock-out swing, and a

@@ -269,10 +269,14 @@ more than 200 below the terrain is lifted to it and frozen (`FUN_1407d4470`). Gl
   passed 0.86. So a waker staying low or crawling (tasks 52) is let go when the 0.75 s blend ends, at once without one; posture 0 (65) stands
   through the clip. Its end clears `+0x278` (getting up) and sets the posture (vfunc 0x370).
 - Also run when a crawler's leg comes back up (posture 2 to 0, `FUN_1405c7e20`; **Observed**): no ragdoll, so no blend, and the character stands through `standing up 3` (clip past 0.86). Meitou: `CombatSystem.Act` holds it
-  (`GetUpSeconds` less the blend) and `AnimationSystem` plays the clip (`CharacterAnimation.WasCrawling`); posture 1 to 0 (Stand Up) is unchanged. Checked offscreen in `--sandbox`: leg 80 below the KO point crawls the next tick, a heal 2 s later plays `standing up 3`.
+  (`GetUpClipSeconds`) and `AnimationSystem` plays the clip (`CharacterAnimation.WasCrawling`); posture 1 to 0 (Stand Up) is unchanged. Checked offscreen in `--sandbox`: leg 80 below the KO point crawls the next tick, a heal 2 s later plays `standing up 3`.
 - The start (when it found a clip) copies the character's position into the Hold point (CharStats `+0x130`, **Verified** `FUN_14033ca10`).
 - Meitou (`CombatSystem.Act`): a waker staying low or crawling is held `RagdollSystem.GetUpBlend` after a whole-body ragdoll, else not at all,
   and plays no standing-up clip (`AnimationSystem`); the Hold point is moved where it wakes while Hold is on.
+- Meitou hold (`CombatSystem.Act`, measured headless): a posture-0 waker is held `GetUpClipSeconds` (clip length x 0.86 / play speed; `standing up 3` is 8.67 s at speed 1, so 7.45 s)
+  plus `GetUpBlend` only when it wakes out of a whole-body ragdoll (the same test that starts the clip at -0.75 s in `AnimationSystem`), so the hold ends on the tick the played clip passes 0.86.
+  The earlier constant added the blend with no ragdoll, 23 ticks past the clip. One carried or waking in a bed plays no clip (engine choice) and is not held. **Unknown**: whether the original
+  runs Task_GetUp for a waker in a bed or carried (the start returns at once when a state at `+0x2f8` is set, meaning not decoded).
 
 ## Saves
 

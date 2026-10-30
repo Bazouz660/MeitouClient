@@ -46,6 +46,9 @@ public static class CharacterFacts
     /// <summary>The "getting up" byte (<c>Character</c> <c>+0x278</c>): set while the character rises from a knock-down (<see cref="CharacterCold.GettingUpUntil"/>).</summary>
     public static bool GettingUp(CharacterCold cold, long tick) => cold.GettingUpUntil > tick;
 
+    /// <summary>Whether a waking character stands through the get-up clip: not one carried, and not one waking in a bed (it lies on; <c>AnimationSystem</c> plays no clip, so nothing holds it).</summary>
+    public static bool PlaysGetUp(CharacterCold cold) => cold.CarriedBy.IsNone && cold.InSomething != Locks.HeldState.Bed;
+
     /// <summary><c>Character::isInCombatMode(melee, ranged)</c> (<c>FUN_140436610</c>, <see cref="CombatSystem.IsInCombatMode"/>).</summary>
     internal static bool InCombatMode(CombatSystem combat, CharacterTable table, CharacterId id, CharacterCold cold, bool melee, bool ranged) =>
         combat.IsInCombatMode(table, id, cold, melee, ranged);

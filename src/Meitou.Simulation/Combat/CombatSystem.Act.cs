@@ -196,12 +196,14 @@ public sealed partial class CombatSystem
         // A leg down replaces it with the forced crawl (posture 2), which ends standing.
         if (cold.Medical.Crawling) cold.Medical.StayingLow = false;
         // Waking: it gets up (Task_GetUp, docs/game/ragdolls.md "Getting up"), less wanted as a target and left alone by a hit while its fight is off. Standing up takes
-        // GetUpSeconds; one staying low or crawling (posture above 0) is held only while its bones blend out of a whole-body ragdoll, else not at all (FUN_140334a20).
-        if (s.Down && !cold.Medical.Incapacitated && GetUpSeconds > 0)
+        // the clip's played length, after the bone blend when it wakes out of a whole-body ragdoll; one staying low or crawling (posture above 0) is held only for that blend,
+        // else not at all (FUN_140334a20). One carried or in a bed plays no get-up clip (AnimationSystem), so it is held for none either.
+        if (s.Down && !cold.Medical.Incapacitated && GetUpClipSeconds > 0)
         {
+            bool whole = world.SystemOf<Ragdolls.RagdollSystem>()?.WasWhole(table.IdOf(i)) == true;
             float hold = cold.Medical.StayingLow || cold.Medical.Crawling
-                ? world.SystemOf<Ragdolls.RagdollSystem>()?.WasWhole(table.IdOf(i)) == true ? Ragdolls.RagdollSystem.GetUpBlend : 0
-                : GetUpSeconds;
+                ? whole ? Ragdolls.RagdollSystem.GetUpBlend : 0
+                : CharacterFacts.PlaysGetUp(cold) ? GetUpClipSeconds + (whole ? Ragdolls.RagdollSystem.GetUpBlend : 0) : 0;
             // It neither walks, works nor fights until then (Task_GetUp holds the character).
             if (hold > 0)
             {
@@ -214,9 +216,9 @@ public sealed partial class CombatSystem
         // The leg back up (posture 2 to 0, not a waking): the posture setter queues the get-up task 65 (FUN_1405c7e20), which stands the character through the
         // `standing up 3` clip with no bone blend (no ragdoll to leave: FUN_140334a20), holding it like a waker.
         bool crawling = cold.Medical.Crawling;
-        if (s.Crawl && !crawling && !s.Down && !cold.Medical.Incapacitated && !cold.Medical.Prone && GetUpSeconds > Ragdolls.RagdollSystem.GetUpBlend && cold.CarriedBy.IsNone)
+        if (s.Crawl && !crawling && !s.Down && !cold.Medical.Incapacitated && !cold.Medical.Prone && GetUpClipSeconds > 0 && cold.CarriedBy.IsNone)
         {
-            cold.GettingUpUntil = now + (int)MathF.Ceiling((GetUpSeconds - Ragdolls.RagdollSystem.GetUpBlend) / dt);
+            cold.GettingUpUntil = now + (int)MathF.Ceiling(GetUpClipSeconds / dt);
             cold.StaggeredUntil = Math.Max(cold.StaggeredUntil, cold.GettingUpUntil);
             if (Orders.Has(cold, CharacterOrders.Hold)) cold.HoldPoint = new Vector2(prev[i].Position.X, prev[i].Position.Z);
         }
