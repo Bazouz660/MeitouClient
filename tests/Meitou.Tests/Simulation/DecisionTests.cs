@@ -78,6 +78,48 @@ public class DecisionTests
     }
 
     /// <summary>
+    /// A medic on the Medic job leaves its downed patient for its squad's fight (the player faction's 15 Protect allies is a priority-3 goal, tried before every job), keeps fighting while
+    /// its own attacker's blows land, and treats again once the enemies are down. Catches a job's task that keeps its character out of a mate's fight (the played report: a medic healing
+    /// mid-fight while its mates were attacked and it was hit).
+    /// </summary>
+    [Fact]
+    public void A_medic_on_its_job_joins_its_squads_fight_and_treats_after()
+    {
+        using var rig = Quiet();
+        var f = rig.Fighter;
+        var squad = new Squad { Id = rig.World.Squads.NextId(), TemplateId = "p", Faction = 1 };
+        rig.World.Squads.Add(squad);
+        foreach (var id in new[] { f, rig.Mate, rig.Carried })
+        {
+            rig.Cold(id).SquadId = squad.Id;
+            squad.Members.Add(id);
+        }
+        rig.Say(new MedicJobCommand([f]) { Tick = rig.World.Tick });
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Treat && rig.Cold(f).Running is { Row: TaskType.JOB_MEDIC }, 120, "treating on the medic job");
+        // The mate beside the medic is attacked: the medic joins its defence at the next retaliation pass.
+        var at = rig.World.Characters.Next[rig.Mate.Slot].Position;
+        var mateFoe = rig.Add(at.X + 12, at.Z, player: false);
+        rig.Say(new Meitou.Simulation.Combat.AttackOrder([mateFoe], rig.Mate) { Tick = rig.World.Tick });
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Attack, 2 * RetaliationSystem.CheckEveryTicks + 2, "joining the mate's fight");
+        Assert.Equal("Join a mate's fight (engine)", rig.Cold(f).Decision!.Winner);
+        // Its own attacker's blows land; it fights on and never goes back to its patient while they do.
+        var foe = Attacker(rig);
+        int blows = 0, lastHit = -1;
+        for (int t = 0; t < 600 && blows < 3; t++)
+        {
+            rig.World.RunTick();
+            Assert.NotEqual(CharacterTask.Treat, rig.Task(f));
+            var hit = rig.Combat.StateOf(f);
+            if (hit.HitTick != lastHit && hit.HitTick >= 0) { lastHit = hit.HitTick; blows++; }
+        }
+        Assert.True(blows >= 2, $"blows landed on the medic: {blows}");
+        // The enemies down: the medic job takes its patient up again.
+        rig.Cold(foe).Medical!.KnockOut(100000);
+        rig.Cold(mateFoe).Medical!.KnockOut(100000);
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Treat && rig.Cold(f).Running is { Row: TaskType.JOB_MEDIC }, 120, "treating again");
+    }
+
+    /// <summary>
     /// An order that cannot run falls through (the original's chooser goes on): a First Aid order without a medkit stays queued with its text while its character defends itself. Catches a
     /// blocked order that keeps its character from its goals, or one dropped by the fight.
     /// </summary>
