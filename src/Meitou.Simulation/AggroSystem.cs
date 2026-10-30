@@ -594,6 +594,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public bool TownKnown;
         /// <summary>Which finder takes a candidate below attack on sight: the stance's (every goal of the mind, the look) or one goal's alone (<see cref="FindFoe"/>).</summary>
         public FoeFinder Finder;
+        /// <summary>Fights started this tick by target, counted as attackers in the score (<see cref="FindFoe"/> from the AI's serial step; null: none).</summary>
+        public IReadOnlyDictionary<int, int>? Pending;
         /// <summary>An enemy-tagged character the look gathered as a new entry (-1: none), the replan trigger of a fighter the AI runs.</summary>
         public int NewEnemy;
     }
@@ -1047,13 +1049,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// picks no fights (<see cref="AggroSettings.AttackOnSight"/> off) or the looker cannot pick one (a slave, no relations, no fighter). A pure read of the last looks and fights: any thread
     /// in the think.
     /// </summary>
-    public CharacterId FindFoe(World world, int slot, FoeFinder finder)
+    public CharacterId FindFoe(World world, int slot, FoeFinder finder, IReadOnlyDictionary<int, int>? pending = null)
     {
         var table = world.Characters;
         if (!Settings.AttackOnSight || finder == FoeFinder.Stance || (uint)slot >= (uint)slots.Length || slots[slot].Senses is not { } own
             || table.Cold(slot) is not { Medical: not null, SlaveState: not 1, Fighter.CanAttack: true } cold || !Relations.Contains(cold.Faction)) return CharacterId.None;
         var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;
-        if (finder == FoeFinder.TroubleMakers) return FindTroubleMaker(world, slot, cold, own, war);
+        if (finder == FoeFinder.TroubleMakers) return FindTroubleMaker(world, slot, cold, own, war, pending);
         bool neutrals = finder == FoeFinder.EnemiesAndNeutrals;
         // As the look's own gate: no enemy faction about, no neutrals wanted, no war and no TEMP_ENEMY tag of its squad leave nothing to find.
         if (!(cold.Faction < hasEnemy.Length && hasEnemy[cold.Faction]) && !neutrals && !war.IsSet && !(Memory?.AnyTempEnemy(cold.SquadId) ?? false)) return CharacterId.None;
@@ -1067,6 +1069,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         float range = MathF.Max(0, RangeOf(cold, Settings.SightRange));
         var scan = NewScan(world, slot, cold, stance, war, range, null, keepSenses: false);
         scan.Finder = finder;
+        scan.Pending = pending;
         Pick(ref scan);
         if (cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { Members.Count: > 1 } squad)
         {
@@ -1099,7 +1102,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     /// allied faction; the original's "innocent" victim branch is <b>Unknown</b> in part and left out). The best by the target score, as the look's (the area test <c>FUN_140599f30</c> is not
     /// modelled). A pure read (any thread in the think).
     /// </summary>
-    CharacterId FindTroubleMaker(World world, int slot, CharacterCold cold, SenseBlock own, WarTargets war)
+    CharacterId FindTroubleMaker(World world, int slot, CharacterCold cold, SenseBlock own, WarTargets war, IReadOnlyDictionary<int, int>? pending)
     {
         if (Towns is not { } towns) return CharacterId.None;
         var table = world.Characters;
@@ -1109,6 +1112,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         int owner = town.Site >= 0 && town.Site < towns.SiteFactions.Count ? towns.SiteFactions[town.Site] : -1;
         var fights = Combat ?? world.SystemOf<Combat.CombatSystem>();
         var scan = NewScan(world, slot, cold, Ai.AiStance.Defensive, war, MathF.Max(0, RangeOf(cold, Settings.SightRange)), null, keepSenses: false);
+        scan.Pending = pending;
         foreach (var e in own.entries)
         {
             int t = e.Target;
@@ -1296,7 +1300,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         var candidate = new Meitou.Simulation.Combat.TargetCandidate
         {
             Staggered = fight.StumbleClip >= 0 && (int)s.Tick < fight.StunUntil,
-            Attackers = s.Combat?.AttackerCount(s.World, slot) ?? 0,
+            Attackers = (s.Combat?.AttackerCount(s.World, slot) ?? 0) + (s.Pending is { } pending ? pending.GetValueOrDefault(slot) : 0),
             Taunt = (c.Orders & CharacterOrders.Taunt) != 0,
             Passive = (c.Orders & CharacterOrders.Passive) != 0,
             Distance = MathF.Sqrt(d2),

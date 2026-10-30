@@ -40,17 +40,18 @@ public sealed partial class AiSystem
 
     /// <summary>
     /// A combat goal's finder: its factor and the character it would fight (<see cref="CharacterId.None"/> with the factor 0). Attack goals: <see cref="AggroSystem.FindFoe"/>, factor 1 with a
-    /// pick. Protect goals: <see cref="ProtectPick"/>. Reads only the last tick's state (any thread in the think).
+    /// pick. Protect goals: <see cref="ProtectPick"/>. <paramref name="pending"/>: the fights the serial step started this tick, by target (<see cref="SendFights"/>). Reads only the last tick's
+    /// state (any thread in the think).
     /// </summary>
-    (float Factor, CharacterId Target) FightPick(World world, int slot, TaskType type, AiMind mind)
+    (float Factor, CharacterId Target) FightPick(World world, int slot, TaskType type, AiMind mind, IReadOnlyDictionary<int, int>? pending = null)
     {
-        if (Protects(type)) return ProtectPick(world, slot, type, mind);
+        if (Protects(type)) return ProtectPick(world, slot, type, mind, pending: pending);
         var foe = type switch
         {
-            TaskType.ATTACK_ENEMIES => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.Enemies),
-            TaskType.ATTACK_ENEMIES_AND_NEUTRALS => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.EnemiesAndNeutrals),
-            TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.Territory),
-            TaskType.ATTACK_TROUBLE_MAKERS => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.TroubleMakers),
+            TaskType.ATTACK_ENEMIES => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.Enemies, pending),
+            TaskType.ATTACK_ENEMIES_AND_NEUTRALS => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.EnemiesAndNeutrals, pending),
+            TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.Territory, pending),
+            TaskType.ATTACK_TROUBLE_MAKERS => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.TroubleMakers, pending),
             _ => null,
         } ?? CharacterId.None;
         return (foe.IsNone ? 0 : 1, foe);
@@ -82,7 +83,7 @@ public sealed partial class AiSystem
     /// fails the plan (factor 0). 143's fallback hand list (+0x2f8, x0.1) is not modelled. Without <paramref name="attacker"/> only the finder's value (row 13 not asked, the target none).
     /// Reads only the last tick's state (any thread in the think).
     /// </summary>
-    (float Factor, CharacterId Target) ProtectPick(World world, int slot, TaskType type, AiMind mind, bool attacker = true)
+    (float Factor, CharacterId Target) ProtectPick(World world, int slot, TaskType type, AiMind mind, bool attacker = true, IReadOnlyDictionary<int, int>? pending = null)
     {
         var table = world.Characters;
         var prev = table.Previous;
@@ -117,7 +118,7 @@ public sealed partial class AiSystem
         }
         if (best < 0) return (0, CharacterId.None);
         if (!attacker) return (MathF.Min(value, Combat.CombatSystem.ProtectCap), CharacterId.None);
-        int foe = fights.BestAttackerOf(world, best, slot);
+        int foe = fights.BestAttackerOf(world, best, slot, pending);
         return foe < 0 ? (0, CharacterId.None) : (MathF.Min(value, Combat.CombatSystem.ProtectCap), new CharacterId(foe, prev[foe].Generation));
     }
 
@@ -126,25 +127,35 @@ public sealed partial class AiSystem
     /// both of the goal's provenance, for the next tick; the fight is the AI's own (<see cref="AiMind.FightFrom"/>), so the character thinks in it. A character fighting by then, or whose pick
     /// is gone or down, starts none (it thinks again). Each character asks for one fight at most, so none joins two in a tick. The squad mates of one that starts are asked to think at the next
     /// tick, when its fight holds a target, so 143 finds it at once.
+    /// The original's choosers run one character after another, and a fight's start puts the fighter on its target's engaged list at once (<c>setAttackTarget</c>), which the next chooser's
+    /// target score reads (<c>FUN_14059e300</c>: minus the candidate's attackers; <b>Observed</b>); the thinks here read the last tick's fights, so every mate picking from one sighting would take
+    /// the same target. So once a fight is started here, a later starter of this pass picks again with the fights started so far counted as attackers of their targets.
     /// </summary>
     void SendFights(World world)
     {
         var table = world.Characters;
+        pendingFights.Clear();
         for (int s = 0; s < table.HighWater; s++)
         {
             if (table.Cold(s) is not { Ai: { } mind } cold || mind.FightTarget.IsNone) continue;
             var foe = mind.FightTarget;
             var goal = mind.FightGoal;
             mind.FightTarget = CharacterId.None;
-            if (!table.Next[s].Alive || cold.InCombat || !table.TryResolveNext(foe, out int f) || table.Cold(f) is not { Medical.Incapacitated: false }) continue;
+            if (!table.Next[s].Alive || cold.InCombat) continue;
+            if (pendingFights.Count > 0 && FightPick(world, s, goal, mind, pendingFights).Target is { IsNone: false } again) foe = again;
+            if (!table.TryResolveNext(foe, out int f) || table.Cold(f) is not { Medical.Incapacitated: false }) continue;
             bool protects = Protects(goal);
             world.Defer(new AttackOrder([table.IdOf(s)], foe) { Tick = world.Tick + 1, Source = TaskSource.Goal, Defensive = protects });
             mind.FightFrom = world.Tick + 1;
+            pendingFights[f] = pendingFights.GetValueOrDefault(f) + 1;
             aggro?.GoalFight(world, s, f, voice: !protects);
             foreach (var m in mind.Squad.Members)
                 if (m.Slot != s && table.TryResolveNext(m, out int ms) && table.Cold(ms) is { InCombat: false, Ai: { } mate }) mate.Replan = true;
         }
     }
+
+    // The targets of the fights SendFights started in its pass, with how many (derived, not hashed).
+    readonly Dictionary<int, int> pendingFights = [];
 
     /// <summary>
     /// Ends the fights whose fighter's think chose a goal that is no fight (<see cref="InFight"/>; serial, slot order): the fight task ends as any task's start ends it (<see cref="TaskStart.Become"/>,

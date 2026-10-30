@@ -20,6 +20,8 @@ public sealed partial class CombatSystem
         public int Protectee;
         public int Best;
         public float BestScore;
+        /// <summary>Fights started this tick by target, counted as attackers (the AI's serial step, <see cref="BestAttackerOf"/>; null: none).</summary>
+        public IReadOnlyDictionary<int, int>? Pending;
     }
 
     /// <summary>The score a candidate of the lists must beat (<c>chooseAttackTarget</c>'s floor <c>DAT_1416abef4</c> = -100, <b>Verified</b>).</summary>
@@ -97,13 +99,14 @@ public sealed partial class CombatSystem
     /// subject's own target while it fights, the best by <see cref="TargetScore"/> for <paramref name="looker"/>; for a looker other than the subject only those within
     /// <see cref="RetaliationSystem.ProtectReach"/> of the subject, and never one the looker counts as an ally (the subject's own target also only when either side is
     /// the other's enemy). -1 when none. The finder's sense tests and its fallback to the subject's threats are left out (an attacker is put in the senses of whom it attacks).
+    /// <paramref name="pending"/>: fights started this tick by target, counted as attackers of theirs (the AI's serial step).
     /// </summary>
-    public int BestAttackerOf(World world, int subject, int looker)
+    public int BestAttackerOf(World world, int subject, int looker, IReadOnlyDictionary<int, int>? pending = null)
     {
         var table = world.Characters;
         var prev = table.Previous;
         if ((uint)subject >= (uint)prev.Length || table.Cold(looker) is not { Fighter: { } fighter, Medical: { } medical } cold) return -1;
-        var q = new Choice { Self = looker, Current = -1, Cold = cold, Player = cold.IsPlayer, Prone = medical.Prone, Animal = fighter.IsAnimal, Protectee = -1, Best = -1, BestScore = float.NegativeInfinity };
+        var q = new Choice { Self = looker, Current = -1, Cold = cold, Player = cold.IsPlayer, Prone = medical.Prone, Animal = fighter.IsAnimal, Protectee = -1, Best = -1, BestScore = float.NegativeInfinity, Pending = pending };
         bool Joinable(int c)
         {
             if (table.Cold(c) is not { } tc) return false;
@@ -137,7 +140,7 @@ public sealed partial class CombatSystem
         if (c != q.Current && (tc.Faction == q.Cold.Faction || q.Cold.SquadId >= 0 && tc.SquadId == q.Cold.SquadId)) return;
         ref readonly var o = ref read[c];
         if (q.Hold && !Orders.HoldPost(prev[i].Position, q.HoldPoint, prev[c].Position, prev[c].Velocity, prev[c].Yaw, tc.Medical.Crawling || o.AttackTech >= 0, o.TargetSlot >= 0)) return;
-        int attackers = AttackerCount(world, c);
+        int attackers = AttackerCount(world, c) + (q.Pending is { } pending ? pending.GetValueOrDefault(c) : 0);
         float dx = prev[c].Position.X - prev[i].Position.X, dz = prev[c].Position.Z - prev[i].Position.Z;
         var candidate = new TargetCandidate
         {

@@ -752,6 +752,29 @@ public class AggroTests
     }
 
     /// <summary>
+    /// Mates choosing from one sighting in the same tick spread over the foes as the original's one-after-another choosers do (a fight's start puts the fighter on its target's engaged list, which
+    /// the next chooser's target score counts, docs/game/ai-tasks.md "Combat goals"): two members that attack on sight see two bandits, one 20 farther than the other, and start their fights in
+    /// the same tick on different bandits. Catches every mate of a sighting piling on one target.
+    /// </summary>
+    [Fact]
+    public void Mates_attacking_from_one_sighting_in_the_same_tick_take_different_bandits()
+    {
+        using var a = Make(20, 1, TownRelations(), ai: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var squad = a.SquadOf(Town, o, true, (o + new Vector2(-4, 0), 0f), (o + new Vector2(4, 0), 0f));
+        Lists(squad, [Goal(TaskType.ATTACK_ENEMIES)], [Goal(TaskType.ATTACK_ENEMIES)]);
+        Think(a);
+        a.SquadOf(Bandits, o, true, (o + new Vector2(0, 200), MathF.PI), (o + new Vector2(0, 220), MathF.PI));
+        for (int k = 0; k < (int)(4 / a.World.TickSeconds) && !squad.Members.All(a.Fighting); k++) a.World.RunTicks(1);
+        Assert.All(squad.Members, m => Assert.True(a.Fighting(m)));
+        var log = a.Aggro.Log.Where(e => squad.Members.Contains(e.Attacker)).ToList();
+        Assert.Equal(2, log.Count);
+        Assert.Equal(log[0].Tick, log[1].Tick);
+        Assert.NotEqual(a.Combat.StateOf(squad.Members[0]).TargetSlot, a.Combat.StateOf(squad.Members[1]).TargetSlot);
+    }
+
+    /// <summary>
     /// NPC combat goals in a running fight: a town squad that attacks on sight (16) and protects its own (143), a gate guard squad that protects allies (15) beside it, and a bandit squad
 
     /// without an AI that only answers; pinned in <see cref="GoldenHashTests"/> (with the 1, 4 and 16 thread agreement).
