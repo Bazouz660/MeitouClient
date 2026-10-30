@@ -683,7 +683,11 @@ public sealed partial class CombatSystem : IProjectileSource
         bool shooterAlive = p.Shooter < prev.Length && prev[p.Shooter].Alive && prev[p.Shooter].Generation == p.ShooterGeneration;
         if (shooterAlive && intended) write[p.Shooter].Landed++;
         if (shooterAlive) Crimes?.Hit(world, p.Shooter, v);
-        if (shooterAlive && !dc.Medical.Incapacitated) world.SystemOf<AggroSystem>()?.Notice(world, world.Characters.IdOf(v), world.Characters.IdOf(p.Shooter));   // the victim senses the shooter (FUN_140999d50)
+        if (shooterAlive && !dc.Medical.Incapacitated)
+        {
+            world.SystemOf<AggroSystem>()?.Notice(world, world.Characters.IdOf(v), world.Characters.IdOf(p.Shooter));   // the victim senses the shooter (FUN_140999d50)
+            HitReplan(dc, world.Tick);
+        }
         // The bolt hit's relation events (FUN_140439c90: none without a shooter; a bolt that was not meant for the victim is a minor knock-out and no hit).
         if (shooterAlive) Deeds?.Blow(world, p.Shooter, v, dc.Medical.Incapacitated, death, bolt: true, aimed: intended);
         if (death && world.Uniques.RecordOf(world.Characters.IdOf(v)) is { } unique) world.Uniques.Died(unique, p.ShooterIsPlayer, dc.Faction);

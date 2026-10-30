@@ -120,7 +120,7 @@ public class AggroTests
     /// after the looks and gives the AI the threats (Self preservation).
     /// </summary>
     static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, ITickSystem? extra = null, bool ai = false, bool flee = false,
-        GameDatabase? db = null)
+        GameDatabase? db = null, AiSettings? think = null)
     {
         relations ??= Relations();
         var combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = true })
@@ -130,7 +130,7 @@ public class AggroTests
         };
         var aggro = new AggroSystem(relations, settings ?? new AggroSettings { RecordLog = true });
         var walk = new OpenGroundWalkability((_, _) => 150);
-        ITickSystem[] mind = ai ? [new AiSystem(new PopulationData { Db = db ?? new GameDatabase(), Sites = [], Factions = [], Relations = relations }) { ThreatSource = flee ? combat : null }] : [];
+        ITickSystem[] mind = ai ? [new AiSystem(new PopulationData { Db = db ?? new GameDatabase(), Sites = [], Factions = [], Relations = relations }, think) { ThreatSource = flee ? combat : null }] : [];
         ITickSystem[] run = flee ? [new FleeSystem(relations, combat)] : [];
         var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = false, MinPartitionSize = 1 }, walk,
             [.. mind, new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro, .. run, .. extra is null ? Array.Empty<ITickSystem>() : [extra]]);
@@ -794,6 +794,36 @@ public class AggroTests
         Assert.True(a.Fighting(member), "it fights back within 40");
         Assert.InRange(a.World.Tick - near, 0, 15 + 3);
         Assert.Equal(TaskType.SELF_PRESERVATION, table.Cold(member.Slot)!.Ai!.Goal!.Task.Type);
+    }
+
+    /// <summary>
+    /// A landed blow on an NPC whose fight is off asks its AI to think (the hit path of <c>AI::underMeleeAttack</c>, docs/game/combat.md "Being targeted"): the member following its leader at
+    /// 0.75 is attacked from 120, so the alert finds Self preservation at 0.7; with the periodic think far off (every 600 ticks), it fights back two ticks after the first blow that lands.
+    /// Catches a hit that leaves the threat to the periodic think (up to 15 ticks of being beaten unanswered).
+    /// </summary>
+    [Fact]
+    public void A_landed_blow_on_an_npc_with_its_fight_off_has_it_think_at_once()
+    {
+        using var a = Make(24, 1, TownRelations(), ai: true, think: new AiSettings { ThinkEveryTicks = 600 });
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId member = squad.Members[1];
+        Lists(squad, [], [Goal(TaskType.FOLLOW_SQUADLEADER, 0.75f, target: TaskTargetType.Leader)]);
+        Think(a);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(10, 120), MathF.PI)).Members[0];
+        a.World.RunTicks(15);
+        a.World.Commands.Enqueue(new AttackOrder([bandit], member) { Tick = a.World.Tick });
+        long hit = -1;
+        for (int k = 0; k < (int)(8 / a.World.TickSeconds) && !a.Fighting(member); k++)
+        {
+            a.World.RunTicks(1);
+            if (hit < 0 && a.Combat.StateOf(member).Taken > 0) hit = a.World.Tick;
+        }
+        Assert.True(hit >= 0, "a blow landed before it fought back");
+        Assert.True(a.Fighting(member), "it fights back");
+        Assert.InRange(a.World.Tick - hit, 0, 2);
+        Assert.Equal(TaskType.SELF_PRESERVATION, a.World.Characters.Cold(member.Slot)!.Ai!.Goal!.Task.Type);
     }
 
     /// <summary>

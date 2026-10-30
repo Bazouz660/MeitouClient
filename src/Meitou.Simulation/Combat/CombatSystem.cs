@@ -115,6 +115,15 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         medical.KnockOut(KnockDownSeconds);
         tc.GettingUpUntil = 0;
     }
+
+    /// <summary>
+    /// The hit path of <c>AI::underMeleeAttack</c> (a landed blow, <c>FUN_1404394f0</c>; a bolt, <c>FUN_140999d50</c>): an NPC hit with its fight off, not getting up, has its AI think at the next
+    /// tick (<see cref="Ai.AiMind.Replan"/>), where its Self preservation weighs the attacker the hit made a threat (<see cref="AggroSystem.Force"/>). Serial phases.
+    /// </summary>
+    static void HitReplan(CharacterCold dc, long tick)
+    {
+        if (!dc.InCombat && dc.Ai is { } mind && !CharacterFacts.GettingUp(dc, tick)) mind.Replan = true;
+    }
     /// <summary>The outdoor sight a fighter senses a current target within (before the race's multiplier; <see cref="AggroSettings.SightRange"/>'s default).</summary>
     public float SenseRange { get; set; } = AggroSystem.OutdoorSight;
     public IReadOnlyList<CombatTechnique> Techniques => techniques;
