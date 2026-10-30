@@ -665,15 +665,14 @@ martial-arts category 5. [animals.md](game/animals.md), [characters.md](characte
 relations, shared targets, player self-defence as a [decision step](#decision-step) goal ([order toggles](#order-toggles)), chase give-up and return to routine. The look keeps every
 living character's senses (`SenseBlock`, read through `CharacterFacts.Senses`; [perception](game/perception.md#senses)): entries, the `numEnemies` / neutral / ally counts, the threats
 list and the threat sums. The fights read them: target choice (`CombatSystem.ChooseTarget`), Self preservation's threat level and the immediate threat (`CombatSystem.ThreatLevel`,
-`ImmediateThreat`), the urgent turret job (step 3), the chase give-up, playing dead, the arrival lines and IS_OUTNUMBERED. Then, for a character that may attack on sight, the look picks
-the best `Combat.TargetScore` among the entries it saw or heard (the original's attack-on-sight finder), not the nearest. For an NPC the AI runs that only asks it, and its squad mates within
-twice their own R of the target ([squad-shared sightings](game/perception.md)), to think at the next tick: the combat goals decide in the chooser ([AI](#ai)). An NPC without an AI (engine
-choice: squads `AiSystem` does not run, minds dropped by trade, recruitment or capture) keeps the old rule: it attacks by the relations and its free mates without an AI join when their own
-finder takes the target (`AggroSystem.Takes`). The player's characters are offered the sighting (Hold's 16, the 16 job). Without the Aggro part the look keeps the senses only.
-Being taken as a target is answered the same tick when it alerts ([being targeted](game/combat.md#fight-lifecycle-and-orders)), the rest every 15 ticks: the attacked NPC fights back;
-free squad mates without an AI within `JoinRange` (250, engine choice; the original's joiner must sense the mate) join an attacked member's defence each check even while it is
-already fighting or down (engine rule), against an attacker within 150 of it (`AI::findAttackerOf`, `RetaliationSystem.ProtectsMates`). An NPC the AI runs joins only by 143, 15 or 288 in
-the chooser, which the alert asks to think (`RetaliationSystem.AskProtectors`); a player character by its goal 15 ([decision step](#decision-step)). So gate guards fight the Skimmers
+`ImmediateThreat`), the urgent turret job (step 3), the chase give-up, playing dead, the arrival lines and IS_OUTNUMBERED. Then, for a player character that may attack on sight (Hold's 16, the 16 job), the
+look picks the best `Combat.TargetScore` among the entries it saw or heard (the original's attack-on-sight finder), not the nearest, and offers it to it and to its free mates whose own look takes
+it (`AggroSystem.Takes`). An NPC with a mind that senses a new enemy only asks itself, and its squad mates within twice their own R of it
+([squad-shared sightings](game/perception.md)), to think at the next tick: the combat goals decide in the chooser ([AI](#ai)). An NPC without a mind starts no fight on sight. Without the Aggro part
+the look keeps the senses only.
+Being taken as a target is answered the same tick when it alerts ([being targeted](game/combat.md#fight-lifecycle-and-orders)), the rest every 15 ticks: the attacked NPC fights back (stand-in
+for 32's fighting provider 13). Others join only by their own goals: an NPC by 143, 15 or 288 in the chooser, whose squad mates (and the attacker's) the alert asks to think
+(`RetaliationSystem.AskProtectors`); a player character by its goal 15 ([decision step](#decision-step)); followers and bodyguards by their rows. So gate guards fight the Skimmers
 (relation 0 to every faction, `ATTACK_ENEMIES_AND_NEUTRALS`) that attack townsfolk.
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
 paths; preserve current ordering.
@@ -1620,9 +1619,11 @@ A fight the AI did not start (a self-defence, a duty's, a dialogue's, an assault
 by `Choose` with only the goals that pre-empt them (`Preempts`): Self preservation's run in such a fight, the combat goals on such a duty (the fight's start ends the duty's task through its
 handler). Replan triggers (`AiMind.Replan`, engine stand-ins): a sighting of the look (the looker and its mates within 2 R), a new enemy sensed by a fighter in its own fight, an alert (the
 squad mates of the attacker and the attacked, and the NPCs with 15 / 288 that sense the attacked one now), a mate's fight start and the end of its own fight (`CombatSystem.EndFight`); else
-the 15-tick cadence. A sighting is acted on one tick later than the old engine start (look at T, think at T+1, fight from T+2). `AiStance` (the highest combat goal in its hours, Passive with
-none, set when the mind is made) only tells the look when to ask. Any other character the AI does not hold (fleeing, carried, arresting, kidnapping, rescuing, looting, trading) starts no
-goal fight; one without an AI keeps the old rule.
+the 15-tick cadence. A new enemy is acted on one tick after the look that sensed it (look at T, think at T+1, fight from T+2). Any other character the AI does not hold (fleeing, carried, arresting,
+kidnapping, rescuing, looting, trading) starts no goal fight. The members of a squad the AI does not run (a roaming platoon's active half, a campaign's loaded squad, a template without packages)
+get an engine-run mind (`AiMind.Engine`, `AiSystem.EngineMinds`): the combat goals of their package for their role and of their race, and Self preservation's run, weighed on their routine and
+in their own fights; nothing else is acted out ([combat goals](game/ai-tasks.md#combat-goals)). An NPC without a mind (no squad, or between a dropped mind and the next package cadence) only
+fights back.
 
 Scoring follows the original (`TaskProfiles`: desire, commitment, crowding per goal type); a desire
 the original computes in a function of its own counts as 1. Town goals ([ai-tasks.md](game/ai-tasks.md#town-goals)):

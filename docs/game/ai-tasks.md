@@ -944,14 +944,21 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   fight too: in the NPC's own goal fight like any goal, in a fight it did not start (a self-defence, a duty's) as the only goal weighed (`AiSystem.Preempts`). 35 is acted out by
   `FleeSystem` (the squads' run: first run from the threats' centre, hops, `CharacterCold.Fleeing`): the AI asks (`AiMind.FleeRequest`), a fighter is stopped first. A lone runner stops when no threat attacks it
   within 181.7 or its body takes the choice back to fighting; a goal-35 runner and a broken squad stop when no enemy is in sight and nobody attacks it. Not modelled: the player faction's branch of slot 55 (the
-  player's characters never run), the locked-gate zero of 60, 4's ranged and squad factors, standing up first for a character staying low, characters without an AI (a crawling one neither fights back nor runs), and goal 16's zero while prone and row 4's with no working arm (`AggroSystem` lets such an NPC attack on sight).
+  player's characters never run), the locked-gate zero of 60, 4's ranged and squad factors, standing up first for a character staying low, and characters without a mind (a squadless NPC, [engine minds](#combat-goals); a crawling one neither fights back nor runs).
 - So a squad with PROTECT goals and no ATTACK goal starts no fight with an idle enemy (**Observed**): e.g. the base `Fog prince squad`
   (`42029-rebirth.mod`, package `fog prince`); its dialogue package `fogman` answers only events 52 and 53 and has no effects.
 - **Meitou, NPCs** (`AiSystem.Fights.cs`, [AI](../simulation.md#ai)): 16, 21, 144, 34, 143, 15 and 288 are priority-3 goals of `AiSystem.Choose`, scored like every goal (desire x finder
   factor x weight x crowding, x1.25 for the current one; in their hours). Desires: 16 1 (0 Passive, sneaking outside a fight, prone), 21 / 34 / 143 1, 144 0.5, 15 / 288 as above; the factor is 1
   with a pick for the attack goals (`AggroSystem.FindFoe`: the looker's sensed entries and its squad mates' within 2 R, the shared sightings) and the capped fight threat for the protect
-  goals, whose pick is row 13's attacker (none: the goal fails). Engine gates: a character that cannot fight, crawls, runs away under Self preservation or mans a turret wants none. An NPC
-  without an AI keeps the old rule (attack on sight by relations, the retaliation's squad join); one whose lists hold no combat goal starts no fight.
+  goals, whose pick is row 13's attacker (none: the goal fails). Engine gates: a character that cannot fight, crawls, runs away under Self preservation or mans a turret wants none. One whose
+  lists hold no combat goal starts no fight and joins none: it only fights back when attacked (32's stand-in, `RetaliationSystem`). Nothing else starts an NPC's fight on sight or pulls a mate in.
+  - **Squads the AI does not run** (`AiSystem.EngineMinds`, `AiMind.Engine`; engine choice for the routine): `setupAI` gives every character goals (14, 32, its race's, its faction's; [Precedence](#precedence))
+    and its squad's packages add theirs, so every NPC of such a squad gets a mind: a roaming platoon's active half (its trip is the population's stand-in), a campaign's loaded squad and a squad
+    whose template lists no AI packages. Its combat goals are those of its package for its role (a campaign squad's phase package, as `PopulationSystem.GoalDuty` reads it; a roaming one's
+    the package its stand-in follows; none without packages) and of its race; it weighs only them and Self preservation's run, on its routine (standing, wandering, following, the roaming
+    leader's walk) and in its own fight, and acts nothing else out; a fight's end gives the routine back (the stand-down). So a template without packages starts no fight (no base race lists an
+    attack goal; Cannibal lists 143) and a caravan with 143 / 15 only defends. Not modelled for them: 35 and the packages' other goals (the trip goes on as before). A mind dropped by trade,
+    recruitment, capture or storage is made again at the next package cadence (30 ticks); meanwhile, and for an NPC with no squad (scripted worlds only), there is no mind.
   - **In the fight** (`AiSystem.InFight`): the fight a goal started is the AI's own (`AiMind.FightFrom`), and its fighter thinks in it as anyone does. The current combat goal is kept while it is not
     done (the plan step above): an attack goal while its senses count an enemy (`numEnemies`, 16's effect; the same taken for 21, 144 and 34) or its finder picks one, a protect goal while
     its finder values someone above 0 (143 counts its own fight, the 0.01 floor), row 13 not asked again; another combat goal chosen keeps the fight too (the fight re-targets by itself).
@@ -965,8 +972,9 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   - **Same-tick starts** (`AiSystem.SendFights`): the original's choosers run one after another and a fight's start puts the fighter on its target's engaged list at once, which the next
     chooser's target score counts (`FUN_14059e300`: minus manliness per attacker; **Observed**). Meitou's thinks read the last tick, so the serial step picks again, in slot order, for a starter
     after the first of the tick, with the fights already started counted as attackers: mates of one sighting spread over the foes.
-  - **Triggers** (`AiMind.Replan`, engine stand-ins): a sighting (the looker and its mates within 2 R), a new enemy sensed by a fighter in its own fight, an alert (both squads' mates, the 15 / 288
-    NPCs sensing the attacked one), a mate's fight start, and the end of the NPC's own fight (the plan finished), next to the 15-tick cadence. A new mind takes its stance from its lists at once.
+  - **Triggers** (`AiMind.Replan`, engine stand-ins, the same whatever the goals): a new enemy entry in the senses of an NPC that is free or in its own fight (it and its mates within 2 R), an
+    alert (both squads' mates), a mate's fight start, and the end of the NPC's own fight (the plan finished), next to the 15-tick cadence (so an NPC with 15 / 288 that senses an ally's fight weighs
+    it at its next think).
 
 ## Town goals
 

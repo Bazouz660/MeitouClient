@@ -13,7 +13,7 @@ public sealed record AggroSettings
     /// <summary>How far an NPC sees, in world units (dm), before the race's <c>vision range mult</c>: the original's outdoor range (1500, <c>FUN_140851bc0</c>, Verified),
     /// in full daylight; straight ahead only, the view cone shortens it to the side (<see cref="AggroSystem.Visibility"/>).</summary>
     public float SightRange { get; init; } = AggroSystem.OutdoorSight;
-    /// <summary>Keep a <see cref="AggroSystem.Log"/> of every fight started (the host prints it; tests read it).</summary>
+    /// <summary>Keep a <see cref="AggroSystem.Log"/> of every fight an NPC's combat goal started (the host prints it; tests read it).</summary>
     public bool RecordLog { get; init; }
     /// <summary>
     /// Characters attack on sight, and NPCs give chases up and go back to their routine after a fight (false: the look keeps only the senses, for worlds that script their fights:
@@ -22,8 +22,8 @@ public sealed record AggroSettings
     public bool AttackOnSight { get; init; } = true;
 }
 
-/// <summary>A fight the <see cref="AggroSystem"/> started: who saw whom, the factions, the distance and how many squad mates joined.</summary>
-public readonly record struct AggroEntry(long Tick, CharacterId Attacker, CharacterId Target, int AttackerFaction, int TargetFaction, float Distance, int Joined);
+/// <summary>A fight an NPC's combat goal started (<see cref="AggroSystem.GoalFight"/>): who attacks whom, the factions and the distance.</summary>
+public readonly record struct AggroEntry(long Tick, CharacterId Attacker, CharacterId Target, int AttackerFaction, int TargetFaction, float Distance);
 
 /// <summary>
 /// The senses and the attack-on-sight finders (an <b>engine stand-in</b> for the original's <c>SensoryData</c> and the attack goals' finders, docs/game/perception.md "Senses"):
@@ -1385,7 +1385,7 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         Started++;
         if (voice) world.Sounds?.Enqueue(new SoundEvent(SoundKind.Alert, id, targetId, table.Next[target].Position));
         if (Settings.RecordLog)
-            log.Add(new AggroEntry(world.Tick, id, targetId, table.Cold(slot)!.Faction, table.Cold(target)!.Faction, Vector3.Distance(table.Next[slot].Position, table.Next[target].Position), 0));
+            log.Add(new AggroEntry(world.Tick, id, targetId, table.Cold(slot)!.Faction, table.Cold(target)!.Faction, Vector3.Distance(table.Next[slot].Position, table.Next[target].Position)));
     }
 
     /// <summary>
