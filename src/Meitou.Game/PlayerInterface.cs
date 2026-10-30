@@ -102,7 +102,8 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         {
             // Alt + right click on a downed or dead character: the nearest selected loots it (take all). Ctrl + right click: picks it up, or puts it down when a selected
             // character carries it. A plain right click on one of your own downed characters that needs no first aid picks it up too (the original's quick right click).
-            var downed = alt || ctrl ? PickDowned(p) : null;
+            // A ground item's name label (shown while Alt is held) is drawn over everything: a click on it is the item's, never the body lying beside it.
+            var downed = (alt || ctrl) && LabelAt(p) is null ? PickDowned(p) : null;
             if (alt && downed is { } loot && SelectedIds() is { Count: > 0 })
                 Say(new Meitou.Simulation.Carrying.LootOrder([], loot) { Tick = session.World.Tick });
             else if (ctrl && downed is { } body && Selected().Where(c => c.Carrying == body).Select(c => c.Id).ToArray() is { Length: > 0 } carriers)

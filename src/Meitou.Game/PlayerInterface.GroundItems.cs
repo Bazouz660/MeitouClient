@@ -28,12 +28,19 @@ sealed partial class PlayerInterface
     /// </summary>
     int? PickGroundItem(Vector2 pixel) => PickGroundItemAt(pixel)?.Id;
 
+    /// <summary>The ground item whose name label (shown while the Highlight key is held) is under the pixel, else null.</summary>
+    int? LabelAt(Vector2 pixel)
+    {
+        if (HighlightFocus is null) return null;
+        foreach (var (id, rect) in itemLabels)
+            if (rect.Contains(pixel.X, pixel.Y)) return id;
+        return null;
+    }
+
     /// <summary><see cref="PickGroundItem"/> with the ray distance (0 for a label: it is drawn over everything).</summary>
     (int Id, float T)? PickGroundItemAt(Vector2 pixel)
     {
-        if (HighlightFocus is not null)
-            foreach (var (id, rect) in itemLabels)
-                if (rect.Contains(pixel.X, pixel.Y)) return (id, 0);
+        if (LabelAt(pixel) is { } labelled) return (labelled, 0);
         if (Ray(pixel) is not { } ray || GroundItemShape is not { } shapeOf) return null;
         (int, float)? best = null;
         float bestT = float.MaxValue;
