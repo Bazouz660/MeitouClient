@@ -402,23 +402,6 @@ public sealed class Blackboard
     }
 }
 
-/// <summary>How readily an AI character starts a fight with someone it sees (docs/simulation.md "AI", Combat goals): from the combat goals of its lists in their hours.</summary>
-public enum AiStance : byte
-{
-    /// <summary>Starts no fight (it still fights back when attacked).</summary>
-    Passive = 0,
-    /// <summary>Attacks enemies fighting its own squad: a mate's target or a mate's attacker (PROTECT_OWN_SQUAD, docs/game/ai-tasks.md "Combat goals").</summary>
-    ProtectSquad = 1,
-    /// <summary>Attacks the attackers of an ally it senses (PROTECT_ALLIES and the like) or, as a law enforcer, of an ally in its town (<see cref="AiMind.DefendsAllies"/>, <see cref="AiMind.EnforcesLaw"/>).</summary>
-    Defensive = 2,
-    /// <summary>Attacks enemies within its home (TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME).</summary>
-    Territorial = 3,
-    /// <summary>Attacks enemies on sight (ATTACK_ENEMIES; also the default for a character whose lists hold no combat goal, the old rule).</summary>
-    Aggressive = 4,
-    /// <summary>Attacks enemies and neutrals on sight (ATTACK_ENEMIES_AND_NEUTRALS).</summary>
-    AggressiveNeutrals = 5,
-}
-
 /// <summary>A flight the think asks the <see cref="FleeSystem"/> to start (<see cref="AiMind.FleeRequest"/>).</summary>
 public enum FleeAsk : byte
 {
@@ -429,7 +412,7 @@ public enum FleeAsk : byte
     Enemies = 2,
 }
 
-/// <summary>What the AI decided for one character (<see cref="CharacterCold.Ai"/>): the goal it acts out, where its post and bed are, how readily it fights.</summary>
+/// <summary>What the AI decided for one character (<see cref="CharacterCold.Ai"/>): the goal it acts out, where its post and bed are, the fight it asks for.</summary>
 public sealed class AiMind
 {
     /// <summary>The squad it thinks for (fixed for the mind's life: a character does not change squads), held so the think needs no lookup. Not hashed (the squad is).</summary>
@@ -443,7 +426,6 @@ public sealed class AiMind
     /// <summary>The plan's first step (None without a plan).</summary>
     public TaskType Step => Plan.Count > 0 ? Plan[0].Type : TaskType.None;
     public AiBehaviour Behaviour { get; set; }
-    public AiStance Stance { get; set; } = AiStance.Aggressive;
     /// <summary>The <see cref="Blackboard.Version"/> the goal was chosen under.</summary>
     public int Version { get; set; } = -1;
     /// <summary>Its own spot: where it stood when the AI took it over (the stand-in where the home has no node or bed for it).</summary>
@@ -513,20 +495,6 @@ public sealed class AiMind
     /// cleared by that think.
     /// </summary>
     public bool Replan { get; set; }
-    /// <summary>Whether its lists hold any combat goal at all (else the stance is <see cref="AiStance.Passive"/>: no fight on sight).</summary>
-    public bool HasCombatGoals { get; set; }
-    /// <summary>Whether a PROTECT_ALLIES goal (15 or 288) is in its lists and hours: an alert to an ally it senses asks it to think (<see cref="RetaliationSystem"/>).</summary>
-    public bool ProtectsAllies { get; set; }
-    /// <summary>
-    /// The combat goals in its lists and hours that join fights by their own finders (docs/game/ai-tasks.md "Combat goals"; the <see cref="Stance"/> keeps only the highest): 143 PROTECT_OWN_SQUAD,
-    /// a goal that defends allies (15, 288; 41 and 45 by an engine reading) and 34 ATTACK_TROUBLE_MAKERS. Follow from the lists and the hour as the stance does, so not hashed.
-    /// </summary>
-    public bool ProtectsSquad { get; set; }
-    public bool DefendsAllies { get; set; }
-    public bool EnforcesLaw { get; set; }
-    /// <summary>The role list and hour <see cref="Stance"/> was worked out for (a cache; the stance itself is hashed).</summary>
-    internal IReadOnlyList<AiGoal>? StanceFrom { get; set; }
-    internal int StanceHour { get; set; } = -1;
     /// <summary>What it wants to buy (goal 118, <see cref="ShoppingList"/>); made with the mind from its record and the world seed, not saved.</summary>
     public ShoppingList Shopping { get; init; } = new();
     /// <summary>The shop it walks to for goal 118 (set when the target is picked, so the arrival knows what the shop stocks); follows from the target, so not hashed.</summary>
@@ -541,7 +509,6 @@ public sealed class AiMind
         hasher.Add((int)(Goal?.Task.Type ?? TaskType.None));
         hasher.Add((int)Step);
         hasher.Add((int)Behaviour);
-        hasher.Add((int)Stance);
         hasher.Add(Version);
         hasher.Add(Post);
         hasher.Add(WanderCentre);

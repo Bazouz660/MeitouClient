@@ -133,28 +133,9 @@ public static class TaskBehaviours
         [TaskType.PROTECT_ALLIES_STAY_IN_TOWN] = (AiBehaviour.Fight, "Protect allies"),
     };
 
-    /// <summary>
-    /// The combat goals and the stance each gives (<see cref="AiMind.Stance"/>: the look asks the AI to think when the highest of them would take a sighting, <see cref="AggroSystem"/>;
-    /// the goals themselves decide in the chooser, <see cref="AiBehaviour.Fight"/>). SELF_PRESERVATION (in the <c>AI Goals</c> of 30 races) is not one: fighting back when attacked is the
-    /// retaliation rule's.
-    /// </summary>
-    static readonly Dictionary<TaskType, AiStance> Stances = new()
-    {
-        [TaskType.ATTACK_ENEMIES] = AiStance.Aggressive,
-        [TaskType.ATTACK_ENEMIES_AND_NEUTRALS] = AiStance.AggressiveNeutrals,
-        [TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME] = AiStance.Territorial,
-        [TaskType.PROTECT_ALLIES] = AiStance.Defensive,
-        [TaskType.PROTECT_OWN_SQUAD] = AiStance.ProtectSquad,
-        [TaskType.PROTECT_ALLIES_STAY_IN_TOWN] = AiStance.Defensive,
-        [TaskType.ATTACK_TROUBLE_MAKERS] = AiStance.Defensive,
-        [TaskType.ATTACK_ENEMIES_OF_MY_SLAVEMASTER] = AiStance.Defensive,
-        [TaskType.BODYGUARD] = AiStance.Defensive,
-    };
-
     // Flat tables by type number for the think's hot loop (a dictionary lookup per goal was a third of the think).
     internal const int TypeCount = 291;
     static readonly AiBehaviour[] Behaviours = BuildBehaviours();
-    static readonly sbyte[] StanceTable = BuildStances();
 
     static AiBehaviour[] BuildBehaviours()
     {
@@ -162,20 +143,6 @@ public static class TaskBehaviours
         foreach (var (type, e) in Table) a[(int)type] = e.Behaviour;
         return a;
     }
-
-    static sbyte[] BuildStances()
-    {
-        var a = new sbyte[TypeCount];
-        Array.Fill(a, (sbyte)-1);
-        foreach (var (type, s) in Stances) a[(int)type] = (sbyte)s;
-        return a;
-    }
-
-    /// <summary>The stance a combat goal gives; null for a goal that is not one.</summary>
-    public static AiStance? StanceOf(TaskType type) => (uint)type < TypeCount && StanceTable[(int)type] >= 0 ? (AiStance)StanceTable[(int)type] : null;
-
-    /// <summary>The goal types that are combat goals.</summary>
-    public static IEnumerable<TaskType> CombatGoals => Stances.Keys;
 
     public static AiBehaviour Of(TaskType type) => (uint)type < TypeCount ? Behaviours[(int)type] : AiBehaviour.None;
 

@@ -51,12 +51,12 @@ public sealed record ChangeAi(int SquadId, string PackageId) : SimCommand;
 /// the package by slot and package class; each member thinks on its own cadence: it scores the goals of its role list, its race's <c>AI Goals</c> and the
 /// default idle goal by tier (urgent, then non-urgent, then fluff; the first tier with a positive score wins), weight, hour window, crowding and continuity,
 /// acts out the winner through <see cref="TaskBehaviours"/> (in its home building's nodes and beds where it has one); its combat goals are goals of the same choice (AiSystem.Fights.cs),
-/// and the stance they give only tells <see cref="AggroSystem"/>'s look when to ask it to think. The AI runs only characters that nothing else holds: not the player's, not in a fight it did not
+/// which <see cref="AggroSystem"/>'s look asks it to weigh again when it senses a new enemy. The AI runs only characters that nothing else holds: not the player's, not in a fight it did not
 /// start, fleeing, down, carrying, carried, treating, looting or trading; in its own fight it chooses but acts out nothing (<see cref="InFight"/>), and an engine duty or fight is taken over
 /// only by the goals that pre-empt it (<see cref="Preempts"/>). Roaming platoons keep their travel stand-in (<see cref="PopulationSystem"/>; their off-screen mode follows
 /// their package, <see cref="PlatoonJobs"/>).
 /// <list type="bullet">
-/// <item><c>Think</c> (parallel): the stance, the choice and the act-out write only the character's own state (its task, goal, path flags and <see cref="AiMind"/>);
+/// <item><c>Think</c> (parallel): the choice and the act-out write only the character's own state (its task, goal, path flags and <see cref="AiMind"/>);
 /// they read the squad's blackboard, which only the serial steps change.</item>
 /// <item><c>Inputs</c> (serial): contracts. <c>SlowWorld</c> (serial): blackboards, homes and minds for new squads; on the package cadence the intact test, the package
 /// choice, the patrol's progress and the crowding counts.</item>
@@ -124,12 +124,6 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             mind.Replan = false;
             var id = table.IdOf(i);
             var roles = ObeyedRoles(world, squad, cold) ?? board.Roles[(int)RoleOf(squad, id, cold)];
-            if (!ReferenceEquals(mind.StanceFrom, roles) || mind.StanceHour != hour)
-            {
-                // The stance changes only with the role list (a package switch) and the hour.
-                mind.Stance = StanceOf(mind, roles, hour);
-                (mind.StanceFrom, mind.StanceHour) = (roles, hour);
-            }
             ref var n = ref table.Next[i];
             if (Holds(n, cold))
             {
@@ -243,35 +237,6 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         : cold.Role == (int)SquadRole.Squad2 ? AiRole.Squad2
         : cold.Role == (int)SquadRole.Slave ? AiRole.Slave
         : AiRole.Squad;
-
-    /// <summary>
-    /// The stance from the combat goals of its role list and race in their hours (the most aggressive wins), and which of the goals that join fights by their own finders are there
-    /// (<see cref="AiMind.ProtectsSquad"/>, <see cref="AiMind.DefendsAllies"/>, <see cref="AiMind.EnforcesLaw"/>, <see cref="AiMind.ProtectsAllies"/>). The stance only tells the look when to ask
-    /// the AI to think (<see cref="AggroSystem"/>); the goals decide in the chooser. A character whose lists hold no combat goal is <see cref="AiStance.Passive"/>: it starts no fight
-    /// (docs/game/ai-tasks.md "Combat goals").
-    /// </summary>
-    internal static AiStance StanceOf(AiMind mind, IReadOnlyList<AiGoal> roles, int hour)
-    {
-        bool any = false, allies = false, squad = false, defends = false, law = false;
-        var stance = AiStance.Passive;
-        void Take(AiGoal g)
-        {
-            if (TaskBehaviours.StanceOf(g.Task.Type) is not { } s) return;
-            any = true;
-            if (!g.InWindow(hour)) return;
-            if (s > stance) stance = s;
-            var type = g.Task.Type;
-            allies |= type is TaskType.PROTECT_ALLIES or TaskType.PROTECT_ALLIES_STAY_IN_TOWN;
-            squad |= type == TaskType.PROTECT_OWN_SQUAD;
-            law |= type == TaskType.ATTACK_TROUBLE_MAKERS;
-            defends |= s == AiStance.Defensive && type != TaskType.ATTACK_TROUBLE_MAKERS;
-        }
-        for (int k = 0; k < roles.Count; k++) Take(roles[k]);
-        for (int k = 0; k < mind.RaceGoals.Count; k++) Take(mind.RaceGoals[k]);
-        mind.HasCombatGoals = any;
-        (mind.ProtectsAllies, mind.ProtectsSquad, mind.DefendsAllies, mind.EnforcesLaw) = (allies, squad, defends, law);
-        return stance;
-    }
 
     /// <summary>
     /// The goal to act out, with its plan in <see cref="AiMind.Plan"/>: by tier (urgent, non-urgent, fluff), the goals with a positive score highest first,
@@ -1260,15 +1225,11 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (cold.Ai is null)
                 {
                     var p = table.Next[s].Position;
-                    var made = cold.Ai = new AiMind
+                    cold.Ai = new AiMind
                     {
                         Squad = squad, MemberIndex = k, Post = OccupierPost(world, board, k) ?? new Vector2(p.X, p.Z), RaceGoals = cold.Race is { } race ? data.Ai.RaceGoals(race.StringId) : [], Resume = squad.Resume,
                         Shopping = ShoppingList.Make(data.Db, cold.RecordId, world.Seed, Rng.Key(table.IdOf(s))),
                     };
-                    // Its stance from its lists at once, not only at its first think (the look reads it before then).
-                    var roles = ObeyedRoles(world, squad, cold) ?? board.Roles[(int)RoleOf(squad, squad.Members[k], cold)];
-                    made.Stance = StanceOf(made, roles, world.Hour);
-                    (made.StanceFrom, made.StanceHour) = (roles, world.Hour);
                 }
                 if (cold.Ai.Goal is { } g)
                 {

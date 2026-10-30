@@ -267,7 +267,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     /// <summary>How near a mate must be to join (engine choice: the original's only limit is that the joiner senses the mate, up to its sight range).</summary>
     public const float JoinRange = 250;
 
-    readonly List<int> guards = [], protectors = [];
+    readonly List<int> guards = [];
     /// <summary>Per attacker slot: the target (slot, generation) it last took and whether that target has been alerted (<see cref="CombatSystem.Alerts"/>).</summary>
     int[] alertSlot = [], alertGeneration = [];
     bool[] alerted = [], justAlerted = [];
@@ -486,15 +486,10 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
         }
         bool periodic = world.Tick % CheckEveryTicks == 0;
         if (!periodic && !fresh) return;
-        // The bodyguards and the NPCs with PROTECT_ALLIES in their hours, in slot order, for Guards and AskProtectors (each looked through the whole table per attacker before).
+        // The bodyguards, in slot order, for Guards (each looked through the whole table per attacker before).
         guards.Clear();
-        protectors.Clear();
         for (int s = 0; s < table.HighWater; s++)
-        {
-            if (!next[s].Alive || table.Cold(s) is not { } c) continue;
-            if (!c.FollowOrder.IsNone) guards.Add(s);
-            if (c.Ai is { ProtectsAllies: true }) protectors.Add(s);
-        }
+            if (next[s].Alive && table.Cold(s) is { FollowOrder.IsNone: false }) guards.Add(s);
         var taken = new HashSet<int>();
         if (fresh)
             for (int a = 0; a < table.HighWater; a++)
@@ -597,11 +592,11 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     }
 
     /// <summary>
-    /// An alert asks the NPCs the AI runs that may come to the attacked character's or the attacker's side to think at the next tick (<see cref="Ai.AiMind.Replan"/>; a replan trigger, engine
-    /// stand-in for the original's): the squad mates of both (143 PROTECT_OWN_SQUAD) and those with PROTECT_ALLIES (15, 288) in their hours whose last look sensed the attacked one now. Their
-    /// protect goals then decide in the chooser (AiSystem.Fights.cs). Not those fighting already (they do not think).
+    /// An alert asks the squad mates of the attacked character and of the attacker that have a mind to think at the next tick (<see cref="Ai.AiMind.Replan"/>; a replan trigger, engine stand-in
+    /// for the original's), whatever their goals: their protect goals then decide in the chooser (AiSystem.Fights.cs). Others that sense the fight (15, 288) weigh it at their next think. Not
+    /// those fighting already.
     /// </summary>
-    void AskProtectors(World world, CharacterTable table, int attacker, int attacked)
+    static void AskProtectors(World world, CharacterTable table, int attacker, int attacked)
     {
         void Mates(int slot)
         {
@@ -611,10 +606,6 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
         }
         Mates(attacked);
         Mates(attacker);
-        if (protectors.Count == 0 || world.SystemOf<AggroSystem>() is not { } aggro) return;
-        var target = new CharacterId(attacked, table.Next[attacked].Generation);
-        foreach (int s in protectors)
-            if (s != attacked && s != attacker && table.Cold(s) is { InCombat: false, Ai: { } mind } && aggro.SensesOf(s) is { } senses && senses.Knows(target, now: true)) mind.Replan = true;
     }
 
     /// <summary>A player's character defends itself only against an attacker within this (Self preservation's desire is 0 beyond squared 33000, docs/game/combat.md "Fight lifecycle and orders").</summary>
