@@ -95,7 +95,10 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     PopulationData Data => data;
     /// <summary>The towns' alarms the investigators answer (<see cref="AiBehaviour.Investigate"/>); null: none are raised.</summary>
     public Crime.CrimeSystem? Crimes { get; set; }
-    /// <summary>The combat system, for the threats Self preservation reads (<see cref="Combat.CombatSystem.ThreatLevel"/>); null: nothing threatens anyone.</summary>
+    /// <summary>
+    /// The combat system, for the threats Self preservation reads (<see cref="Combat.CombatSystem.ThreatLevel"/>) and its fight's attacker (row 13); null: the world's, once the serial step has
+    /// found it (none: nothing threatens anyone).
+    /// </summary>
     public Combat.CombatSystem? ThreatSource { get; set; }
 
     /// <summary>The alarm an investigator answers: its squad's town's nearest in reach, for goal 210 only its own faction's (<see cref="Crime.CrimeSystem.AlarmFor"/>).</summary>
@@ -150,21 +153,17 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             // A character on an engine duty or in an engine fight: only the goals that pre-empt it (Preempts) are weighed.
             if (Preempts(n, cold) is not Restrict.None and var only && Choose(world, i, id, mind, squad, board, roles, hour, only) is { } urgent)
             {
-                if (ReferenceEquals(urgent, SelfPreservationGoal)) mind.FleeRequest = FleeAsk.Threat;
-                else
-                {
-                    mind.FightTarget = FightPick(world, i, urgent.Task.Type, mind).Target;
-                    mind.FightGoal = urgent.Task.Type;
-                    if (!mind.FightTarget.IsNone) Interlocked.Exchange(ref fighting, 1);
-                }
+                // Self preservation's run; or a fight (its own defence, a combat goal's), which a character already fighting does not start again.
+                if (ReferenceEquals(urgent, SelfPreservationGoal) && mind.Step == TaskType.RUN_AWAY) mind.FleeRequest = FleeAsk.Threat;
+                else if (!cold.InCombat) AskFight(world, i, urgent.Task.Type, mind);
             }
         }
     }
 
     /// <summary>
-    /// The choice of a character in its own fight (<see cref="OwnsFight"/>): a combat goal keeps the fight running (the fight is its plan's task, already queued: no new start, whichever combat goal
-    /// is current now; the combat system re-targets); Self preservation's run (35) or a goal 35 asks the flee step, which stops the fight; any other goal ends the fight in the serial step,
-    /// and the character thinks again at the next tick to act it out (docs/game/ai-tasks.md "Combat goals"). Writes only its own mind.
+    /// The choice of a character in its own fight (<see cref="OwnsFight"/>): a combat goal or Self preservation's fight (row 13) keeps the fight running (the fight is its plan's task, already
+    /// queued: no new start, whichever of them is current now; the combat system re-targets); Self preservation's run (35) or a goal 35 asks the flee step, which stops the fight; any other goal
+    /// ends the fight in the serial step, and the character thinks again at the next tick to act it out (docs/game/ai-tasks.md "Combat goals"). Writes only its own mind.
     /// </summary>
     void InFight(AiMind mind, AiGoal goal, Blackboard board)
     {
@@ -178,7 +177,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         mind.Goal = goal;
         mind.Behaviour = behaviour;
         mind.Version = board.Version;
-        if (behaviour != AiBehaviour.Fight) mind.FleeRequest = behaviour == AiBehaviour.SelfPreserve ? FleeAsk.Threat : FleeAsk.Enemies;
+        if (behaviour == AiBehaviour.Flee || behaviour == AiBehaviour.SelfPreserve && mind.Step == TaskType.RUN_AWAY)
+            mind.FleeRequest = behaviour == AiBehaviour.SelfPreserve ? FleeAsk.Threat : FleeAsk.Enemies;
     }
 
     // Set by a fighter's think that chose a goal that is no fight (AiMind.LeaveFight).
@@ -188,31 +188,33 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     internal enum Restrict : byte
     {
         None,
-        /// <summary>The combat goals (priority 3): a fight they start ends the engine duty through its task's end.</summary>
-        Fights,
-        /// <summary>Self preservation, only when it runs (35): the flee step stops the engine fight.</summary>
-        Flight,
-        /// <summary>The combat goals and Self preservation (its run): what an <see cref="AiMind.Engine"/> mind weighs on its routine and in its own fight.</summary>
+        /// <summary>Self preservation alone (its run, or its fight through row 13 against its own attacker).</summary>
+        Self,
+        /// <summary>
+        /// The combat goals and Self preservation (priority 3): a fight they start ends an engine duty through its task's end; what an <see cref="AiMind.Engine"/> mind weighs on its routine
+        /// and in its own fight.
+        /// </summary>
         Combat,
     }
 
     /// <summary>
     /// What may take over an NPC with a mind that the AI does not hold (<see cref="Holds"/>), as the original's chooser would (its engine duties are goals and jobs of the same chooser, below a
-    /// priority-3 goal, docs/game/ai-tasks.md "Precedence"): in a fight it did not start (a self-defence, a duty's fight), Self preservation's run, as <see cref="SelfPreservation.Runs"/> decides
-    /// it (a leg down or no working arm under a threat); on an engine duty whose system lets a fight interrupt it, the combat goals. The duties: treating (<see cref="FirstAid.FirstAidSystem"/>
-    /// lets go of the patient at the fight's start), a town errand's walk but the cage walk (<see cref="Kidnap.TownDutySystem"/> waits for the fight to end and walks on; one carrying an intruder
-    /// out fights with the body on its shoulder, as the original's carrier does), a captive job's walk carrying nothing (<see cref="Kidnap.CaptiveSystem"/> gives the job up); on the routine of
-    /// an <see cref="AiMind.Engine"/> mind (<see cref="EngineRoutine"/>), the combat goals and Self preservation's run. Not the arrest, kidnap, rescue, loot and lift tasks, the cage walks (the kidnapper's walks again over a fight), dialogue
-    /// walks, trades or flights.
+    /// priority-3 goal, docs/game/ai-tasks.md "Precedence"): on an engine duty whose system lets a fight interrupt it, the combat goals and Self preservation; on any other (and in a fight it did
+    /// not start: a dialogue's, an assault's, a duty's), Self preservation alone, whose fight or run (<see cref="SelfPreservation.Runs"/>) ends the duty's task as any fight's start does (in a
+    /// fight, only its run changes anything). The duties a fight may interrupt: treating (<see cref="FirstAid.FirstAidSystem"/> lets go of the patient at the fight's start), a town errand's walk but
+    /// the cage walk (<see cref="Kidnap.TownDutySystem"/> waits for the fight to end and walks on; one carrying an intruder out fights with the body on its shoulder, as the original's carrier
+    /// does), a captive job's walk carrying nothing (<see cref="Kidnap.CaptiveSystem"/> gives the job up), and the routine of an <see cref="AiMind.Engine"/> mind (<see cref="EngineRoutine"/>).
+    /// Nothing for one fleeing, imprisoned, carried or down, nor for a gunner or a carrier in a fight.
     /// </summary>
     internal static Restrict Preempts(in CharacterHot n, CharacterCold cold)
     {
-        if (cold.Ai is not { } mind || cold.IsPlayer || cold.Fleeing || cold.Engaged || cold.IsImprisoned || !cold.CarriedBy.IsNone || cold.Medical is { Incapacitated: true }) return Restrict.None;
-        if (cold.InCombat) return cold.Gunning is null && cold.Carrying.IsNone ? Restrict.Flight : Restrict.None;
+        if (cold.Ai is not { } mind || cold.IsPlayer || cold.Fleeing || cold.IsImprisoned || !cold.CarriedBy.IsNone || cold.Medical is { Incapacitated: true }) return Restrict.None;
+        if (cold.InCombat) return cold.Gunning is null && cold.Carrying.IsNone ? Restrict.Self : Restrict.None;
+        if (cold.Engaged) return Restrict.Self;
         if (mind.Engine && EngineRoutine(n, cold)) return Restrict.Combat;
-        if (n.Task == (byte)CharacterTask.Treat) return Restrict.Fights;
+        if (n.Task == (byte)CharacterTask.Treat) return Restrict.Combat;
         return n.Task == (byte)CharacterTask.GoTo && cold.Running is { Source: TaskSource.Goal, Task: CharacterTask.GoTo } run
-            && (Kidnap.TownDutySystem.IsErrandRow(run.Row) || cold.Carrying.IsNone && Kidnap.CaptiveSystem.IsJobRow(run.Row)) ? Restrict.Fights : Restrict.None;
+            && (Kidnap.TownDutySystem.IsErrandRow(run.Row) || cold.Carrying.IsNone && Kidnap.CaptiveSystem.IsJobRow(run.Row)) ? Restrict.Combat : Restrict.Self;
     }
 
     /// <summary>
@@ -294,8 +296,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (g.Task.Type == TaskType.SELF_PRESERVATION && !ReferenceEquals(g, SelfPreservationGoal)) return;
                 if (only switch
                     {
-                        Restrict.Fights => TaskBehaviours.Of(g.Task.Type) != AiBehaviour.Fight,
-                        Restrict.Flight => !ReferenceEquals(g, SelfPreservationGoal),
+                        Restrict.Self => !ReferenceEquals(g, SelfPreservationGoal),
                         Restrict.Combat => TaskBehaviours.Of(g.Task.Type) != AiBehaviour.Fight && !ReferenceEquals(g, SelfPreservationGoal),
                         _ => false,
                     }) return;
@@ -391,7 +392,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             // The assault's finder factor: 1 while a member of the mission target's squad passes its tests, else 0 (FUN_140793eb0).
             AiBehaviour.Assault => targeting == TaskTargetType.SquadMission && !AssaultTargetFor(world, self.Slot, board).IsNone ? 1 : 0,
             // Self preservation: the threat level (AI slot 17); Running away: row 35's own (AI slot 55), a goal of the packages that list it.
-            AiBehaviour.SelfPreserve => ThreatSource is { } source ? source.ThreatLevel(world, self.Slot, out _) : 0,
+            AiBehaviour.SelfPreserve => SelfPreservationDesire(world, self.Slot, mind),
             AiBehaviour.Flee => world.Characters.Cold(self.Slot) is { } runner ? SelfPreservation.RunDesire(runner) : 0,
             // A combat goal: its own desire's zeros and factors, times its finder's factor (an attack goal's 1 with a target, a protect goal's fight threat; AiSystem.Fights.cs).
             AiBehaviour.Fight => FightDesire(world, self.Slot, type, mind) is var want and > 0 ? want * FightFactor(world, self.Slot, type, mind) : 0,
@@ -875,11 +876,11 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (!mind.AssaultTarget.IsNone) Interlocked.Exchange(ref assaulting, 1);
                 break;
             case AiBehaviour.Fight:
-                // Stands while the serial step starts the fight on the finder's pick (the combat system walks it there and fights); the request is its own mind's.
+            case AiBehaviour.SelfPreserve when mind.Step != TaskType.RUN_AWAY:
+                // Stands while the serial step starts the fight on the finder's pick (Self preservation's: row 13's attacker of itself; the combat system walks it there and fights); the
+                // request is its own mind's.
                 Become(world, slot, CharacterTask.Idle);
-                mind.FightTarget = FightPick(world, slot, type, mind).Target;
-                mind.FightGoal = type;
-                if (!mind.FightTarget.IsNone) Interlocked.Exchange(ref fighting, 1);
+                AskFight(world, slot, type, mind);
                 break;
             case AiBehaviour.SelfPreserve:
             case AiBehaviour.Flee:

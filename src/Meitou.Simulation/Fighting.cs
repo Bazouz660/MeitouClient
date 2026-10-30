@@ -230,9 +230,11 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 
 /// <summary>
 /// The answer to being attacked: at once when an attacker takes it as its target and that alerts it (<see cref="CombatSystem.Alerts"/>: not through a wall or from another floor for the
-/// player's side, until a blow lands; the alert ends its sneaking and, with the target's fight off, asks it to be decided again unless it gets up or is player-side and moving), and again
-/// every <see cref="CheckEveryTicks"/> ticks, an NPC that is awake, armed with a <see cref="Fighter"/>, not fighting already, and that someone is attacking, fights that attacker (engine
-/// stand-in for 32 Self preservation's fighting provider 13, whose plan the AI does not make). Nobody else joins here: squad mates and allies come by their own protect goals in the
+/// player's side, until a blow lands; the alert ends its sneaking, puts the attacker in its senses as a threat (<see cref="AggroSystem.Force"/>) and, with the target's fight off, asks it to be
+/// decided again unless it gets up or is player-side and moving). An NPC with a mind defends itself by its 32 Self preservation in the AI's chooser (row 13 on its own attacker,
+/// <see cref="Ai.AiSystem.SelfDefencePick"/>), which the alert asks to think at the next tick. One without a mind (no squad: scripted and test worlds) gets the engine's answer here: at the
+/// alert and again every <see cref="CheckEveryTicks"/> ticks, awake, armed with a <see cref="Fighter"/>, not crawling and not fighting already, it fights its attacker at any distance
+/// (<b>engine choice</b>). Nobody else joins here: squad mates and allies come by their own protect goals in the
 /// chooser (AiSystem.Fights.cs), which the alert asks to think (<see cref="AskProtectors"/>). A player character's own
 /// defence is the decision step's 32 Self preservation (<see cref="DecisionSystem"/>; this system offers the attacker,
 /// <see cref="SelfFoe"/>), except a bodyguard's against an attacker within 40 (row 45's <c>!39</c>); followers and bodyguards fight their target's attacker within 40 of it (rows 31 / 45
@@ -475,8 +477,13 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
                     if (tc.Medical is { } medical) medical.StayingLow = false;
                     bool gettingUp = CharacterFacts.GettingUp(tc, world.Tick);
                     combat.UnderAttackGettingUp(world, t, tc, (ulong)(uint)a);
-                    // With its fight off it replans, unless it is getting up or is player-side and moving (docs/game/combat.md "Being targeted").
-                    if (!tc.InCombat && !gettingUp && !(tc.IsPlayer && next[t].Velocity.LengthSquared() > 1)) DecisionSystem.Request(tc);
+                    // With its fight off it replans, unless it is getting up or is player-side and moving (docs/game/combat.md "Being targeted"): an NPC's AI thinks at the next tick,
+                    // where its Self preservation takes the attacker up.
+                    if (!tc.InCombat && !gettingUp && !(tc.IsPlayer && next[t].Velocity.LengthSquared() > 1))
+                    {
+                        DecisionSystem.Request(tc);
+                        if (tc.Ai is { } mind) mind.Replan = true;
+                    }
                 }
             }
             OfferSelf(table, a, t);
@@ -584,15 +591,16 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     public const float ImmediateReach = 40;
 
     /// <summary>
-    /// Whether the attacked character itself answers here: an NPC always (engine choice: its attack-on-sight goal covers the farther attackers); Passive does not stop it. A player
-    /// character's own defence is the decision step's Self preservation (<see cref="SelfFoe"/>, docs/game/ai-tasks.md "Precedence": its orders outrank it, it outranks the jobs), but a
-    /// bodyguard following (row 45 running) answers here as a step of its row against an attacker within <see cref="ImmediateReach"/> (45 needs <c>!39</c>, its own <c>+0x2b0</c>; farther ones
-    /// are Self preservation's, which a Bodyguard order outranks and a Bodyguard job does not).
+    /// Whether the attacked character itself answers here: an NPC without a mind at any distance (<b>engine choice</b>: the minimal answer of a character no chooser runs); Passive does not stop
+    /// it. An NPC with a mind defends itself by its Self preservation in the AI's chooser (<see cref="Ai.AiSystem.SelfDefencePick"/>). A player character's own defence is the decision step's
+    /// Self preservation (<see cref="SelfFoe"/>, docs/game/ai-tasks.md "Precedence": its orders outrank it, it outranks the jobs), but a bodyguard following (row 45 running) answers here as a
+    /// step of its row against an attacker within <see cref="ImmediateReach"/> (45 needs <c>!39</c>, its own <c>+0x2b0</c>; farther ones are Self preservation's, which a Bodyguard order
+    /// outranks and a Bodyguard job does not).
     /// </summary>
     static bool SelfDefends(CharacterTable table, int slot, HashSet<int> taken, Vector3 attacker)
     {
         if (!Able(table, slot, taken, out var cold, out byte task)) return false;
-        if (!cold.IsPlayer) return true;
+        if (!cold.IsPlayer) return cold.Ai is null;
         var d = attacker - table.Next[slot].Position;
         return cold.Guarding && task == (byte)CharacterTask.Follow && d.X * d.X + d.Z * d.Z <= ImmediateReach * ImmediateReach;
     }
@@ -610,8 +618,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
         cold = table.Cold(slot)!;
         if (taken.Contains(slot) || task == (byte)CharacterTask.Attack) return false;
         // a carried mate does not answer; a carrier does (no attack goal of the original's tests carrying, docs/game/carry-loot.md "A carrier in a fight"). A crippled NPC (a leg
-        // down, crawling) does not either, nor one with an AI and no working arm: Self preservation's planner takes them to Running away (35), which the AI starts through the
-        // FleeSystem (SelfPreservation.Flees, FUN_1405a34e0 against FUN_1405a4260, Verified); a player character still fights.
+        // down, crawling) does not either (with a mind its Self preservation runs, FUN_1405a34e0 against FUN_1405a4260, Verified; without one it neither fights nor runs); a player
+        // character still fights.
         return cold is { Fighter.CanAttack: true, Fleeing: false, IsImprisoned: false, Medical.Incapacitated: false, CarriedBy.IsNone: true }
             && (cold.IsPlayer || cold.Medical is not { Crawling: true } && !Ai.SelfPreservation.Flees(cold, 1));
     }

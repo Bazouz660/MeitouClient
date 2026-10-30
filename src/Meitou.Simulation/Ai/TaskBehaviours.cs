@@ -56,8 +56,8 @@ public enum AiBehaviour : byte
     /// </summary>
     Assault = 17,
     /// <summary>
-    /// SELF_PRESERVATION (32, every NPC's urgent goal, <see cref="SelfPreservation"/>): wanted at the threat level (<see cref="Combat.CombatSystem.ThreatLevel"/>), planned only when its
-    /// provider is 35 Running away (a crippled NPC, or one with no working arm); the plan of the fighting provider 13 is <see cref="RetaliationSystem"/>'s. Acted out as <see cref="Flee"/>.
+    /// SELF_PRESERVATION (32, every NPC's urgent goal, <see cref="SelfPreservation"/>): wanted at the threat level (<see cref="Combat.CombatSystem.ThreatLevel"/>), planned as [35, 32] when its
+    /// provider is 35 Running away (a crippled NPC, or one with no working arm; acted out as <see cref="Flee"/>), else [13, 32] on its own attacker (acted out as a <see cref="Fight"/>).
     /// </summary>
     SelfPreserve = 18,
     /// <summary>

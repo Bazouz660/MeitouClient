@@ -721,8 +721,10 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
     }
 
     /// <summary>
-    /// The forced sense (<c>FUN_140858f40</c>, docs/game/perception.md "Spotting a sneaker"): <paramref name="looker"/> is told of <paramref name="target"/> (<c>AI::underMeleeAttack</c>, a
-    /// massive alarm): a new entry is made as seen (tags, threats and counts as at a look), an existing one is marked seen. Serial phases only.
+    /// The forced sense (<c>FUN_140858f40</c>, docs/game/perception.md "Senses"): <paramref name="looker"/> is told of <paramref name="target"/> (<c>AI::underMeleeAttack</c>, a
+    /// massive alarm): a new entry is made as seen (tags, threats and counts as at a look), an existing one is marked seen. An existing entry's threat is also taken at once when the target's
+    /// fight targets the looker (<b>engine</b>: the original's AI update runs its sense pass right before the chooser, <c>FUN_1405112b0</c>, so the replan an attack asks for reads a current
+    /// threats list; Meitou's look runs once in <see cref="AggroSettings.ScanEveryTicks"/>). Serial phases only.
     /// </summary>
     public void Force(World world, int looker, int target)
     {
@@ -737,6 +739,13 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
             var e = b.entries[k];
             e.Seen = true;
             b.entries[k] = e;
+            var id = new CharacterId(target, gen);
+            if (!b.threats.Contains(id) && tc.Faction != cold.Faction && tc.InCombat && tc.Medical is { Incapacitated: false } && (Combat ?? world.SystemOf<Combat.CombatSystem>()) is { } fights
+                && fights.TargetOf(target, gen) == (looker, prev[looker].Generation))
+            {
+                b.threats.Add(id);
+                b.ThreatToMe += 1;
+            }
             return;
         }
         var war = cold.SquadId >= 0 && world.Squads.Find(cold.SquadId) is { War.IsSet: true } assaulting ? assaulting.War : WarTargets.None;

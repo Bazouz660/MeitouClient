@@ -3,12 +3,14 @@ namespace Meitou.Simulation.Ai;
 /// <summary>
 /// Self preservation (goal 32, docs/game/ai-tasks.md "Self preservation"), every character's urgent goal: its desire is the threat level
 /// (<see cref="Combat.CombatSystem.ThreatLevel"/>) and it is achieved by the first provider of <c>!isAggressionTowardsMe</c> the planner reaches: 13 "Attacking attackers of" (which
-/// leads to 4 Attacking; Meitou: <see cref="RetaliationSystem"/> fights back) or 35 "Running away" (<see cref="FleeSystem"/> runs). This holds the two rows' desires and the
-/// planner's choice between them, which depends only on the character's body. The player's characters are the player's to drive (the original's veto for them, which wants no
-/// working arm, is not modelled).
+/// leads to 4 Attacking; Meitou: the AI's serial step starts the fight on its own attacker, <see cref="AiSystem"/>) or 35 "Running away" (<see cref="FleeSystem"/> runs). This holds the two
+/// rows' desires and the planner's choice between them, which depends only on the character's body. The player's characters are the player's to drive (the original's veto for them, which
+/// wants no working arm, is not modelled).
 /// </summary>
 public static class SelfPreservation
 {
+    /// <summary>Goal 32's desire with a threat of positive aggression within <see cref="RetaliationSystem.SelfDefenceReach"/> and none within 40 (<c>FUN_140599d20</c>'s <c>DAT_141696c70</c>).</summary>
+    public const float Attacking = 0.7f;
     /// <summary>Row 35's desire for a character that can get out and is not crippled (<c>DAT_14168a2bc</c>, 0.001: the fallback behind 13).</summary>
     public const float RunFallback = 0.001f;
     /// <summary>Row 4's desire for a crippled fighter under attack within <see cref="RetaliationSystem.ImmediateReach"/> (<c>DAT_14167fad0</c>, 0.1).</summary>

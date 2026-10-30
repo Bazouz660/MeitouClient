@@ -48,6 +48,7 @@ public sealed partial class AiSystem
         if (Protects(type)) return ProtectPick(world, slot, type, mind, pending: pending);
         var foe = type switch
         {
+            TaskType.SELF_PRESERVATION => SelfDefencePick(world, slot, pending),
             TaskType.ATTACK_ENEMIES => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.Enemies, pending),
             TaskType.ATTACK_ENEMIES_AND_NEUTRALS => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.EnemiesAndNeutrals, pending),
             TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME => aggro?.FindFoe(world, slot, AggroSystem.FoeFinder.Territory, pending),
@@ -71,6 +72,44 @@ public sealed partial class AiSystem
             if (aggro?.SensesOf(slot) is { Enemies: > 0 }) return 1;
         }
         return FightPick(world, slot, type, mind).Factor;
+    }
+
+    /// <summary>
+    /// 32 Self preservation's desire (AI slot 17 <c>FUN_140599d20</c>, <b>Verified</b>): the threat level (<see cref="Combat.CombatSystem.ThreatLevel"/>: 1 with a threat within 40, 0.7 with one
+    /// within 181.7, else 0). In its own fight the goal is kept while it is not done (its list A <c>!159</c>, a threat on its list at any distance, <c>FUN_140436720</c>; the plan step,
+    /// <c>FUN_14050d970</c>): <b>engine</b>, a threat only beyond 181.7 keeps it at 0.7 at Meitou's re-think (the original does not weigh a running goal again).
+    /// </summary>
+    float SelfPreservationDesire(World world, int slot, AiMind mind)
+    {
+        if ((ThreatSource ?? combat) is not { } source) return 0;
+        float level = source.ThreatLevel(world, slot, out _);
+        if (level > 0) return level;
+        return mind.Goal?.Task.Type == TaskType.SELF_PRESERVATION && world.Characters.Cold(slot) is { InCombat: true } cold && OwnsFight(cold, mind) && source.Threatened(world, slot)
+            ? SelfPreservation.Attacking : 0;
+    }
+
+    /// <summary>
+    /// Row 13 Attacking attackers of under 32 Self preservation (<c>AI::findAttackerOf</c> on the character itself, <c>FUN_14099c3b0</c>, <b>Verified</b>;
+    /// <see cref="Combat.CombatSystem.BestAttackerOf"/> with the character as both subject and looker: its attackers and its own target, at any distance, best by the target score): the attacker
+    /// it fights, <see cref="CharacterId.None"/> when none or when it cannot fight (no working fighter, crawling). A turret's gunner takes no shooter (its turret row wants only a melee threat
+    /// gone; <b>engine</b>, kept from the old answer). <paramref name="pending"/>: the fights the serial step started this tick. Reads only the last tick's state (any thread in the think).
+    /// </summary>
+    internal CharacterId SelfDefencePick(World world, int slot, IReadOnlyDictionary<int, int>? pending = null)
+    {
+        var table = world.Characters;
+        if ((ThreatSource ?? combat) is not { } source || table.Cold(slot) is not { Fighter.CanAttack: true, Medical.Crawling: false } cold) return CharacterId.None;
+        int foe = source.BestAttackerOf(world, slot, slot, pending);
+        if (foe < 0) return CharacterId.None;
+        var id = new CharacterId(foe, table.Previous[foe].Generation);
+        return cold.Gunning is not null && source.StateOf(id).Ranged ? CharacterId.None : id;
+    }
+
+    /// <summary>Asks the serial step for the fight of a combat goal or of Self preservation (<see cref="FightPick"/>; <see cref="SendFights"/>). Writes only its own mind.</summary>
+    void AskFight(World world, int slot, TaskType type, AiMind mind)
+    {
+        mind.FightTarget = FightPick(world, slot, type, mind).Target;
+        mind.FightGoal = type;
+        if (!mind.FightTarget.IsNone) Interlocked.Exchange(ref fighting, 1);
     }
 
     /// <summary>
@@ -123,7 +162,7 @@ public sealed partial class AiSystem
     }
 
     /// <summary>
-    /// Starts the fights the thinks asked for (serial, slot order; docs/game/ai-tasks.md "Combat goals"): an attack goal's as a goal's attack (row 16), a protect goal's as a defence (row 13),
+    /// Starts the fights the thinks asked for (serial, slot order; docs/game/ai-tasks.md "Combat goals"): an attack goal's as a goal's attack (row 16), a protect goal's and Self preservation's as a defence (row 13; a self-defence is not in the aggro log),
     /// both of the goal's provenance, for the next tick; the fight is the AI's own (<see cref="AiMind.FightFrom"/>), so the character thinks in it. A character fighting by then, or whose pick
     /// is gone or down, starts none (it thinks again). Each character asks for one fight at most, so none joins two in a tick. The squad mates of one that starts are asked to think at the next
     /// tick, when its fight holds a target, so 143 finds it at once.
@@ -144,11 +183,12 @@ public sealed partial class AiSystem
             if (!table.Next[s].Alive || cold.InCombat) continue;
             if (pendingFights.Count > 0 && FightPick(world, s, goal, mind, pendingFights).Target is { IsNone: false } again) foe = again;
             if (!table.TryResolveNext(foe, out int f) || table.Cold(f) is not { Medical.Incapacitated: false }) continue;
-            bool protects = Protects(goal);
+            bool self = goal == TaskType.SELF_PRESERVATION, protects = self || Protects(goal);
             world.Defer(new AttackOrder([table.IdOf(s)], foe) { Tick = world.Tick + 1, Source = TaskSource.Goal, Defensive = protects });
             mind.FightFrom = world.Tick + 1;
             pendingFights[f] = pendingFights.GetValueOrDefault(f) + 1;
-            aggro?.GoalFight(world, s, f, voice: !protects);
+            // A self-defence is no combat goal's fight: not in the aggro log.
+            if (!self) aggro?.GoalFight(world, s, f, voice: !protects);
             foreach (var m in mind.Squad.Members)
                 if (m.Slot != s && table.TryResolveNext(m, out int ms) && table.Cold(ms) is { InCombat: false, Ai: { } mate }) mate.Replan = true;
         }

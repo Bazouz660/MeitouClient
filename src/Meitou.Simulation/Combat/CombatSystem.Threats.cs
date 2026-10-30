@@ -34,11 +34,24 @@ public sealed partial class CombatSystem
             if (d2 > reach2) continue;
             // The immediate flag also wants the threat free (not in a bed or cage, not carried) and not behind a closed gate (ImmediateThreat).
             bool immediate = d2 <= near2 && c.InSomething == global::Meitou.Simulation.Locks.HeldState.None && c.CarriedBy.IsNone && (Locks is not { } locks || locks.NotBlocked(world, here, at));
-            level = MathF.Max(level, immediate ? 1 : 0.7f);
+            level = MathF.Max(level, immediate ? 1 : Ai.SelfPreservation.Attacking);
             sum += at;
             count++;
         }
         if (count > 0) centre = sum / count;
         return level;
+    }
+
+    /// <summary>
+    /// Whether a threat of the senses' list (<see cref="SenseBlock.Threats"/>, as of the last look) still stands, at any distance: Self preservation's list A <c>!159</c> does not hold
+    /// (<c>FUN_140436720</c>, the threats count non-zero). Reads the last tick's state, so any thread after Schedule.
+    /// </summary>
+    public bool Threatened(World world, int self)
+    {
+        var prev = world.Characters.Previous;
+        if (CharacterFacts.Senses(world, self) is not { } senses) return false;
+        foreach (var id in senses.Threats)
+            if ((uint)id.Slot < (uint)prev.Length && prev[id.Slot].Alive && prev[id.Slot].Generation == id.Generation && !read[id.Slot].Down) return true;
+        return false;
     }
 }

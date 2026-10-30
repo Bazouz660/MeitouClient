@@ -78,13 +78,15 @@ public sealed partial class AiSystem
                 mind.Plan.Add(new PlanStep(type, default));
                 return true;
             }
-            // Self preservation (the planner's choice between its providers 13 and 35, SelfPreservation.Runs): planned when 35 wins; the fighting chain through 13 is the
-            // retaliation rule's, so it is no plan here and the next goal is tried.
+            // Self preservation (the planner's choice between its providers 13 and 35, SelfPreservation.Runs): [35, 32] when 35 wins, else [13, 32] when row 13's finder takes an
+            // attacker of its own (AI::findAttackerOf on itself, AiSystem.SelfDefencePick; the fight is the combat system's, as the combat goals'); with neither the next goal is tried.
             if (type == TaskType.SELF_PRESERVATION)
             {
-                if (world.Characters.Cold(slot) is not { } me || !SelfPreservation.Runs(me, desire)) return false;
+                if (world.Characters.Cold(slot) is not { } me) return false;
+                bool runs = SelfPreservation.Runs(me, desire);
+                if (!runs && system.SelfDefencePick(world, slot).IsNone) return false;
                 mind.Plan.Clear();
-                mind.Plan.Add(new PlanStep(TaskType.RUN_AWAY, default));
+                mind.Plan.Add(new PlanStep(runs ? TaskType.RUN_AWAY : TaskType.ATTACK_ATTACKERS_OF, default));
                 mind.Plan.Add(new PlanStep(type, default));
                 return true;
             }
