@@ -57,7 +57,10 @@ public sealed unsafe class VulkanDisplay : IDisposable
             TriangleMeasurements = TriangleMeasurements,
             RayTracing = RayTracing,
         };
-        if (dlss && OperatingSystem.IsWindows() && frameGeneration && options is not null)
+        // Frame generation (FSR 3) needs AMD's library; checked first, so DLSS leaves Streamline for NGX only when the layer can be used.
+        string? layerWhy = OperatingSystem.IsMacOS() ? "the FFX library is not available for Metal" : null;
+        bool layerLoads = frameGeneration && options is not null && layerWhy is null && FfxSwapchain.LibraryLoads(out _, out layerWhy);
+        if (dlss && OperatingSystem.IsWindows() && layerLoads)
         {
             // Frame generation: the FFX swapchain owns the present, which Streamline's interposer must see, so DLSS goes through NGX directly
             // (meitou_ngx.dll) and Streamline is not loaded. Without NGX, Streamline stays and frame generation is off (below).
@@ -83,10 +86,9 @@ public sealed unsafe class VulkanDisplay : IDisposable
         bool wantLayer = false;
         if (frameGeneration && options is not null)
         {
-            string? why = null;
-            if (OperatingSystem.IsMacOS()) why = "the FFX library is not available for Metal";
+            string? why = layerWhy;
+            if (!layerLoads) { }
             else if (Streamline is { DlssSupported: true }) why = "Streamline (DLSS) owns the present (NGX did not load, see the upscaler line above)";
-            else if (!FfxSwapchain.LibraryLoads(out _, out why)) { }
             else wantLayer = true;
             if (!wantLayer) Console.WriteLine($"frame generation  unavailable: {why}");
             else deviceOptions.ExtraGraphicsQueues = FfxSwapchain.WantedExtraQueues;
