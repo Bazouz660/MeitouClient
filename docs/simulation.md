@@ -137,7 +137,7 @@ delivering, fetching and dismantling are steps of one act-out (`TaskStart.ActOut
   `Point` onto the floor, at `Mode`); engine standing tasks (idle, wander, a follow of the squad's leader) through `TaskStart.Become` (the movement's handler stops the character on it).
   Sources: a package goal's act-out (town duties, captive jobs, kidnap, smell, food, population) `Goal`; an engine rule or dialogue act (arrest, flight, dialogue, trade) `Npc`.
 - Not serial: the AI's think (parallel, its own slot) starts its goals' walks and standing tasks with `TaskStart.StartOwn`: the provenance (row: the goal's, source `Goal`) and the
-  walk or stand are written on the slot only; no fight or task before it is ended and no handler runs (the AI runs no fighting character, and its tasks hold nothing). Its repertoire
+  walk or stand are written on the slot only; no fight or task before it is ended and no handler runs (the AI acts out nothing for a fighting character, and its tasks hold nothing). Its repertoire
   is not tested (the AI's planner chose the row). Same timing as before at any thread count.
 - An act-out's own system moves its character on with `TaskStart.Step` (another task of the act-out, or back to a standing task), `TaskStart.StepTo` (its next walk) and
   `TaskStart.Stand` (stop, idle): any phase, its own slot, provenance kept (it then no longer runs the task). These are the walks' arrivals and give-ups, a failed or blocked path, a
@@ -1613,10 +1613,16 @@ Combat goals (`AiBehaviour.Fight`, `AiSystem.Fights.cs`; [combat goals](game/ai-
 the looker's entries seen or heard at its last look, and its squad mates' within twice its range R, the shared sightings; 34 `FindTroubleMaker`), 143, 15 and 288 the attacker row 13 finds
 (`CombatSystem.BestAttackerOf`, within 150) of the mate or ally with the highest fight threat (`CombatSystem.FightThreat`). They are chosen like every goal; the think writes only its own
 mind's request (`AiMind.FightGoal`, `FightTarget`) and stands, and `SendFights` (serial, slot order) defers the fight for the next tick (`AttackOrder`, the goal's provenance; a defence for
-the protect goals), logs it with the aggro system's fights and asks the starter's squad mates to think. Replan triggers (`AiMind.Replan`, engine stand-ins): a sighting of the look (the
-looker and its mates within 2 R), an alert (the squad mates of the attacker and the attacked, and the NPCs with 15 / 288 that sense the attacked one now), a mate's fight start; else the
-15-tick cadence. A sighting is acted on one tick later than the old engine start (look at T, think at T+1, fight from T+2). `AiStance` (the highest combat goal in its hours, Passive with
-none) only tells the look when to ask. A character the AI does not hold (fighting, fleeing, carrying, treating, on an engine task) starts no goal fight; one without an AI keeps the old rule.
+the protect goals), logs it with the aggro system's fights and asks the starter's squad mates to think; a later starter of the same pass picks again with the fights started so far counted
+as attackers (the original's choosers run one after another). That fight is the AI's own (`AiMind.FightFrom`): `Holds` keeps its fighter, which thinks in it but acts nothing out
+(`InFight`): a combat goal keeps the fight, Self preservation's run or a goal 35 asks the flee step, any other goal makes `LeaveFights` (serial) end the fight, and the next tick acts it out.
+A fight the AI did not start (a self-defence, a duty's, a dialogue's, an assault's) and an engine duty a fight may interrupt (treating, a town errand's walk, a captive job's walk) are weighed
+by `Choose` with only the goals that pre-empt them (`Preempts`): Self preservation's run in such a fight, the combat goals on such a duty (the fight's start ends the duty's task through its
+handler). Replan triggers (`AiMind.Replan`, engine stand-ins): a sighting of the look (the looker and its mates within 2 R), a new enemy sensed by a fighter in its own fight, an alert (the
+squad mates of the attacker and the attacked, and the NPCs with 15 / 288 that sense the attacked one now), a mate's fight start and the end of its own fight (`CombatSystem.EndFight`); else
+the 15-tick cadence. A sighting is acted on one tick later than the old engine start (look at T, think at T+1, fight from T+2). `AiStance` (the highest combat goal in its hours, Passive with
+none, set when the mind is made) only tells the look when to ask. Any other character the AI does not hold (fleeing, carried, arresting, kidnapping, rescuing, looting, trading) starts no
+goal fight; one without an AI keeps the old rule.
 
 Scoring follows the original (`TaskProfiles`: desire, commitment, crowding per goal type); a desire
 the original computes in a function of its own counts as 1. Town goals ([ai-tasks.md](game/ai-tasks.md#town-goals)):

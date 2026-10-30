@@ -594,6 +594,7 @@ which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping
 Meitou (`AggroSystem.Chase`, reading the chaser's sense entry of its target, [perception](perception.md#senses)): this give-up (9.1 s gate, 24 s unsensed, 60 units of the entry's place;
 NPCs only, event 60), tested in every running chase, not only a path chase (engine choice), but never while a target not sneaking is within 60 of the chaser itself (engine choice: one
 running past its runner has it at its back); its own fight target sneaking is seen in view without the spot meter (engine choice).
+An NPC's fight that its own combat goal started also ends when the goal is done or its chooser takes a goal that is no fight (`AiSystem.InFight`, [combat goals](ai-tasks.md#combat-goals)); it is the AI's plan step, as the original's.
 
 ## Armour and medical hit
 
