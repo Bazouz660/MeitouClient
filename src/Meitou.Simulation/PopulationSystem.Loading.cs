@@ -16,7 +16,8 @@ public sealed partial class PopulationSystem
         loadingScreen = true;
         try { RefreshZones(world); }
         finally { loadingScreen = false; }
-        foreach (var platoon in world.Platoons.All)
+        // A copy, as the tick's own loop: activating can change the registry (a town's squad that lost too many is made afresh as a new platoon).
+        foreach (var platoon in world.Platoons.All.ToList())
             if (platoon.State == PlatoonState.Unloaded && Wanted(platoon) && Ready(platoon))
                 Activate(world, platoon);
 
