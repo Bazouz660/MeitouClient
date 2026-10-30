@@ -553,15 +553,18 @@ which its next update (`FUN_14050d920` → `FUN_14050d7d0`) consumes by dropping
 - **Target down or held** (`FUN_14060d6a0`, **Verified**): each update, a fight target that is carried, dead or ragdolled (`FUN_1407d1440`: carried flag `+0x3d4`, or the
   body state's `+0x59`/`+0x5a`), or imprisoned (`+0x2f8` 2) while the *fighter's own* fight state is not 8 (stumbling), is dropped, provided the fight state is not 0 (swinging) or
   the attack clip has reached its end point; the fight goes to state 4 (re-decide, kept at 8); when it was also the task's target and refocus is clear the task ends.
-  A focused (ordered) target is dropped too. Meitou: `CombatSystem.Act`'s target test also drops a caged or carried target (the stumbling fighter skips that step; the swing
-  clause is not modelled, as for a fallen target), and `Consider` leaves a carried one out.
+  A focused (ordered) target is dropped too. Meitou: `CombatSystem.Act`'s target test drops a target down this tick (after every body step, `BeforeAct`), caged or carried (the
+  stumbling fighter skips that step; the swing clause is not modelled, as for a fallen target), and `Consider` leaves a carried one out. The task target is the fight's start target
+  (`CombatSlot.TaskSlot`, set by the attack order or goal, kept through retargets); dropping it ends the fight at once, without a new choice (refocus read as clear).
 - **Nothing left** (`Task_MeleeAttack` update): the task ends when the fight task stopped (`FUN_1405c9750`), or when all hold:
   the senses (Character vfunc `0x68`) count no enemies (`numEnemies` +0x94 = 0) and no threat to allies (`totalThreatLevelAllies` +0x8c ≤ 0,
   [threats](#fight-lifecycle-and-orders)), nobody is engaged on the character (engaged list + overflow 0),
   the fight has no target (`+0x2a0` none), and the task's own target is gone or down (its vfunc `0x30` true; **Verified** decompile of `FUN_14034ca40`).
   The immediate end above is `CombatClassAI` update `FUN_14060d6a0` (**Verified**: the dropped target equals the task's target and refocus `+0x2e8` is clear).
-  Meitou keeps no task target apart from the fight target, so it does neither: a fighter whose target is lost chooses again at once and leaves the fight when nobody
-  qualifies (`CombatSystem.Act`). Ending at the task target's fall, and otherwise staying targetless until this test passes, needs that task target first.
+  Meitou (`CombatSystem.NothingLeft`): a fighter that loses another target, or whose periodic choice finds nobody, fights on without a target (state 9), choosing again every pick
+  interval and still defending, until the test passes over its senses ([perception](perception.md#senses): `Enemies`, `ThreatToAllies`), `AttackerCount` and the task target (gone, dead,
+  knocked out; carried too, engine reading). Engine choice: a task target with no sense entry counts as gone, so the entry's decay (30 / 60 / 120 units of 2 s) ends the wait on a live
+  target the fighter lost; a world without senses ends the fight at once.
 - **Path chase give-up** (`ChaseMode`, a base of `Task_MeleeAttack` at task `+0x78`): checked only while the fight is in
   state 11, the path chase that `CombatClassAI::vfunc_9` enters from state 10 when the navmesh line to the target is
   blocked, the two are in different places, or the 2 s chase timer runs ([Combat stance](#combat-stance)). Any other

@@ -336,8 +336,8 @@ public class AggroTests
     }
 
     /// <summary>
-    /// The fighters' re-pick (docs/game/combat.md "Target selection"): a villager whose raider goes down turns at once on the raider attacking its squad mate, and once
-    /// that one is down too and nobody is left, its fight ends.
+    /// A villager whose raider goes down ends that fight with its task target (docs/game/combat.md "Leaving a fight") and at once joins its squad mate's defence against the other raider;
+    /// once that one is down too and nobody is left, its fight ends.
     /// </summary>
     [Fact]
     public void A_fighter_whose_target_drops_turns_on_a_mates_attacker_and_stops_when_none_is_left()
@@ -363,6 +363,35 @@ public class AggroTests
         a.World.RunTicks(5);
         Assert.False(a.Fighting(fighter), "nobody left: the fight ends");
         Assert.True(a.Combat.StateOf(fighter).TargetSlot < 0);
+    }
+
+    /// <summary>
+    /// A sense entry's decay (<c>SensoryData::decay</c> FUN_140859010, docs/game/perception.md "Senses"): an entry its looker no longer senses is dropped 30 sense units (60 s) after the look
+    /// that last sensed it, 60 units (120 s) while its character is in combat mode.
+    /// </summary>
+    [Theory, InlineData(false, 60f), InlineData(true, 120f)]
+    public void An_entry_no_longer_sensed_is_dropped_after_its_life(bool fighting, float life)
+    {
+        var aggro = new AggroSystem(Relations(), new AggroSettings { AttackOnSight = false });
+        using var world = new SimWorld(new WorldSettings { Seed = 3, Threads = 1, PublishSnapshots = false }, new OpenGroundWalkability((_, _) => 150), [aggro]);
+        CharacterId Spawn(float z)
+        {
+            var cold = new Combatant().MakeCold();
+            cold.Faction = Villagers;
+            return world.Characters.Spawn(new CharacterHot { Position = new Vector3(2000, 150, z), Health = 100, MaxSpeed = 60, WalkSpeed = 15 }, cold, 0);
+        }
+        CharacterId looker = Spawn(2000), target = Spawn(2200);   // 200 straight ahead of the looker (yaw 0 faces +Z)
+        world.RunTicks(30);
+        var senses = aggro.SensesOf(looker.Slot)!;
+        Assert.True(senses.Knows(target, now: true), "seen");
+        // Out of sight and hearing; in combat mode for the long life (no combat system here, so nothing ends it).
+        world.Characters.Cold(target.Slot)!.InCombat = fighting;
+        world.Characters.Place(target.Slot, new Vector3(2000, 150, 9000), 0);
+        world.RunTicks((int)((life - 5) / world.TickSeconds));
+        Assert.True(senses.Knows(target), "kept while its life lasts");
+        Assert.False(senses.Knows(target, now: true));
+        world.RunTicks((int)(10 / world.TickSeconds));
+        Assert.False(senses.Knows(target), "dropped once its life is over");
     }
 
     /// <summary>

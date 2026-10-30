@@ -290,6 +290,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         }
         s.TargetSlot = t;
         s.TargetGeneration = target.Generation;
+        (s.TaskSlot, s.TaskGeneration) = (t, target.Generation);
         s.Picked = picked;
         s.PickTick = now + PickTicks(world, cold);
         s.ReadyTick = now;   // no wait before the first swing (startupState enters the attack at once)
@@ -323,6 +324,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
         static void Drop(ref CombatSlot s)
         {
             s.TargetSlot = -1;
+            s.TaskSlot = -1;
             s.AttackTech = -1;
             s.NextBlow = 0;
             s.Engaged = false;
@@ -350,6 +352,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
     {
         var cold = table.Cold(slot)!;
         if (cold.InCombat) s.ListEpoch++;
+        s.TaskSlot = -1;
         EndFight(table, slot);
     }
 

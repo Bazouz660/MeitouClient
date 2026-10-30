@@ -11,6 +11,11 @@ public struct CombatSlot
     public int Generation;
     /// <summary>The target of the fight (slot and generation), -1 for none.</summary>
     public int TargetSlot, TargetGeneration;
+    /// <summary>
+    /// Whom the fight is about (slot and generation, -1: none): the fight task's own target (<c>Task_MeleeAttack</c>'s, the order's or the goal's), set at the fight's start and kept while the
+    /// fighter turns on others. Losing it as the target ends the fight at once; a fight without a target lasts until nothing is left (docs/game/combat.md "Leaving a fight").
+    /// </summary>
+    public int TaskSlot, TaskGeneration;
     /// <summary>The attack technique (index into the system's list), -1 when not attacking.</summary>
     public int AttackTech;
     /// <summary>The tick the attack started, its length in ticks, and the tick after which a new action may start.</summary>
@@ -92,7 +97,7 @@ public struct CombatSlot
 
     public static CombatSlot Fresh(int generation) => new()
     {
-        Generation = generation, TargetSlot = -1, TargetGeneration = 0, AttackTech = -1, ReactTech = -1, ReactedSlot = -1, ReactedSeq = -1, HitTick = -1, HitPart = -1, HitFrom = -1, StumbleClip = -1, YieldTo = -1, LastTech = -1,
+        Generation = generation, TargetSlot = -1, TargetGeneration = 0, TaskSlot = -1, AttackTech = -1, ReactTech = -1, ReactedSlot = -1, ReactedSeq = -1, HitTick = -1, HitPart = -1, HitFrom = -1, StumbleClip = -1, YieldTo = -1, LastTech = -1,
     };
 
     public readonly bool Fighting => TargetSlot >= 0;
@@ -102,6 +107,7 @@ public struct CombatSlot
         h.Add(Generation);
         h.Add(TargetSlot);
         h.Add(TargetGeneration);
+        if (TaskSlot >= 0) { h.Add(TaskSlot); h.Add(TaskGeneration); }   // only during a fight, so worlds without fights hash as before
         h.Add(AttackTech);
         h.Add(AttackStart);
         h.Add(AttackTicks);

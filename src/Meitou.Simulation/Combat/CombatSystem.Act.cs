@@ -266,18 +266,20 @@ public sealed partial class CombatSystem
             }
 
             // 3. The target.
-            // A target down or gone: the fighter chooses again at once (state 4, re-decide), and the fight ends only when nobody is left. While deciding, it chooses again
-            // every PickSeconds, unless the target is the player's pick (a focused order returns its target without scoring). A target caged or carried is dropped the same way,
-            // the player's pick too (CombatClassAI update FUN_14060d6a0: down, dead, ragdolled or carried; imprisoned unless the fighter itself stumbles, which skips this step).
+            // A target down or gone is dropped (state 4, re-decide): the fight ends at once when it was the task's own target (CombatClassAI update FUN_14060d6a0, refocus read as
+            // clear), else the fighter chooses again at once and, with nobody to choose, fights on without a target until nothing is left (NothingLeft). While deciding, it chooses
+            // again every PickSeconds, unless the target is the player's pick (a focused order returns its target without scoring). A target caged or carried is dropped the same
+            // way, the player's pick too (FUN_14060d6a0: down, dead, ragdolled or carried; imprisoned unless the fighter itself stumbles, which skips this step).
             bool fighting = s.TargetSlot >= 0;
             // The target's fight ended since it let this one close in: its engaged list was emptied (FUN_1406659b0 mode 2), the fighter keeps its target and asks again below.
             if (s.Engaged && fighting && (uint)s.TargetSlot < (uint)prev.Length && !Listed(in s, in read[s.TargetSlot])) s.Engaged = false;
             if (fighting && !(s.TargetSlot < prev.Length && prev[s.TargetSlot].Alive && prev[s.TargetSlot].Generation == s.TargetGeneration && !read[s.TargetSlot].Down
-                && table.Cold(s.TargetSlot) is { IsImprisoned: false, CarriedBy.IsNone: true }))
+                && table.Cold(s.TargetSlot) is { IsImprisoned: false, CarriedBy.IsNone: true, Medical.Incapacitated: false }))
             {
                 s.AttackTech = -1;
                 s.NextBlow = 0;
-                int pick = ChooseTarget(world, i, s, cold);
+                bool task = s.TargetSlot == s.TaskSlot && s.TargetGeneration == s.TaskGeneration;
+                int pick = task ? -1 : ChooseTarget(world, i, s, cold);
                 s.PickTick = now + PickTicks(world, cold);
                 if (pick >= 0) { Retarget(ref s, pick, prev[pick].Generation, now); next[i].TaskTime = 0; }   // its path is asked for at once, not after the wait the last target's failure set (PursuitSystem)
                 else
@@ -285,7 +287,7 @@ public sealed partial class CombatSystem
                     fighting = false;
                     s.TargetSlot = -1;
                     s.Picked = false;
-                    EndFight(table, i, ref s);
+                    if (task || NothingLeft(world, i, in s)) EndFight(table, i, ref s);
                 }
             }
             // A player's pick is kept, unless no path leads to it (the focused target is dropped while its path is impossible).
@@ -296,11 +298,19 @@ public sealed partial class CombatSystem
                 if (pick >= 0 && pick != s.TargetSlot) { Retarget(ref s, pick, prev[pick].Generation, now); next[i].TaskTime = 0; }
                 else if (pick < 0)
                 {
-                    // Nobody qualifies, not even the current target (a holder's that left its area, a player's beyond 400): the chooser has no target and the fight ends.
+                    // Nobody qualifies, not even the current target (a holder's that left its area, a player's beyond 400): the chooser has no target (state 9).
                     fighting = false;
                     s.TargetSlot = -1;
-                    EndFight(table, i, ref s);
+                    if (NothingLeft(world, i, in s)) EndFight(table, i, ref s);
                 }
+            }
+            // In the fight without a target: it chooses again every PickSeconds and leaves the fight once nothing is left.
+            else if (!fighting && cold.InCombat && now >= s.PickTick && s.AttackTech < 0 && s.ReactTech < 0)
+            {
+                int pick = ChooseTarget(world, i, s, cold);
+                s.PickTick = now + PickTicks(world, cold);
+                if (pick >= 0) { Retarget(ref s, pick, prev[pick].Generation, now); next[i].TaskTime = 0; fighting = true; }
+                else if (NothingLeft(world, i, in s)) EndFight(table, i, ref s);
             }
 
             // 3b. A crossbowman fights with the crossbow or the melee weapon; with the crossbow the ranged controller runs instead of the melee attack (a blow aimed at it is still met).

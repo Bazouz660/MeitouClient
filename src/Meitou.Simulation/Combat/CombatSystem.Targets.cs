@@ -73,6 +73,26 @@ public sealed partial class CombatSystem
     static bool Crippled(CharacterTable table, int c) => table.Cold(c)?.Medical is { Crawling: true };
 
     /// <summary>
+    /// Whether a fighter without a target leaves its fight (<c>Task_MeleeAttack</c> update <c>FUN_14034ca40</c>, <b>Verified</b>; docs/game/combat.md "Leaving a fight"): its senses count no
+    /// enemy (<see cref="SenseBlock.Enemies"/>) and no threat to its allies (<see cref="SenseBlock.ThreatToAllies"/>), nobody fights it (<see cref="AttackerCount"/>, the engaged list), and
+    /// its task target (<see cref="CombatSlot.TaskSlot"/>) is gone or down (dead or knocked out; carried too, engine reading). Engine choice: a task target its senses hold no entry of counts as
+    /// gone, so a fighter does not wait for ever on a live target it lost (the entry decays 30 to 120 sense units after it was last sensed); a world without senses never holds it.
+    /// Reads the last tick's fights and the senses of the last look.
+    /// </summary>
+    bool NothingLeft(World world, int i, in CombatSlot s)
+    {
+        if (AttackerCount(world, i) > 0) return false;
+        var senses = CharacterFacts.Senses(world, i);
+        if (senses is { Enemies: > 0 } or { ThreatToAllies: > 0 }) return false;
+        var table = world.Characters;
+        var prev = table.Previous;
+        int t = s.TaskSlot;
+        if ((uint)t >= (uint)prev.Length || !prev[t].Alive || prev[t].Generation != s.TaskGeneration || read[t].Down
+            || table.Cold(t) is not { Medical.Incapacitated: false, CarriedBy.IsNone: true }) return true;
+        return senses is null || !senses.Knows(new CharacterId(t, s.TaskGeneration));
+    }
+
+    /// <summary>
     /// <c>AI::findAttackerOf</c> (<c>FUN_14099c3b0</c>, <b>Verified</b>) for a character joining <paramref name="subject"/>'s fight: of those fighting the subject, and the
     /// subject's own target while it fights, the best by <see cref="TargetScore"/> for <paramref name="looker"/>; for a looker other than the subject only those within
     /// <see cref="RetaliationSystem.ProtectReach"/> of the subject, and never one the looker counts as an ally (the subject's own target also only when either side is
