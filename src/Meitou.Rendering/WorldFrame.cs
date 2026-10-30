@@ -1584,7 +1584,7 @@ static class WorldFrame
             gpu.Terrain.FogCull = null;
             StageClock.Lap(6);
             // The blood on walls, buildings and objects (the bloodsurfaces switch) needs the depth the terrain alone wrote, to leave the terrain's pixels to its own blood.
-            bool surfaceBlood = nearSlice && gpu.Decals is { Surfaces: true, SurfaceCount: > 0 } && gpu.DecalStore is not null;
+            bool surfaceBlood = nearSlice && gpu.Decals is { Surfaces: true, SurfaceCount: > 0 } bloodDecals && gpu.DecalStore is not null && bloodDecals.SurfacesNear(eye);
             if (surfaceBlood)
             {
                 host.Close();

@@ -224,6 +224,23 @@ public sealed unsafe partial class TerrainDecalRenderer
     /// <summary>The decals kept for the surfaces now.</summary>
     public int SurfaceCount => surfaces.Count;
 
+    /// <summary>
+    /// Whether any decal kept for the surfaces is within <see cref="TerrainDecalRenderer.Range"/> of <paramref name="eye"/>: the frame copies the depth and splits its passes for them only then
+    /// (<see cref="RecordSurfaces"/> culls the rest per decal).
+    /// </summary>
+    public bool SurfacesNear(Vector3 eye)
+    {
+        if (!surfacesOn) return false;
+        float range = MathF.Max(Range, 0);
+        foreach (var d in surfaces)
+        {
+            var (hw, hh) = Half(d);
+            float radius = MathF.Sqrt(hw * hw + hh * hh);
+            if (radius > 0 && Vector3.Distance(d.Centre, eye) - radius <= range) return true;
+        }
+        return false;
+    }
+
     /// <summary>Drops every decal kept for the surfaces (a new world).</summary>
     public void ClearSurfaces()
     {
