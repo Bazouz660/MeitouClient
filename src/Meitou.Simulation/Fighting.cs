@@ -237,8 +237,8 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
 /// <see cref="ProtectsMates"/>). A player character's own defence is the decision step's 32 Self preservation (<see cref="DecisionSystem"/>; this system offers the attacker,
 /// <see cref="SelfFoe"/>), except a bodyguard's against an attacker within 40 (row 45's <c>!39</c>); followers and bodyguards fight their target's attacker within 40 of it (rows 31 / 45
 /// / 289's <c>!16</c>, <see cref="Guards"/>). Passive keeps a character from helping others, not from defending itself.
-/// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>. With <see cref="SquadAi.Help"/> the player's
-/// free characters also defend characters of allied factions (<see cref="HelpAllies"/>).
+/// The orders go into the world's deferred list for the next tick (<see cref="World.Defer"/>) and are marked <see cref="AttackOrder.Defensive"/>. A player character's help for others (squad mates,
+/// with <see cref="SquadAi.Help"/> allied factions) is the decision step's 15 Protect allies (<see cref="JoinFight"/>), not this pass.
 /// </summary>
 public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecisionOwner
 {
@@ -266,7 +266,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     /// <summary>How near a mate must be to join (engine choice: the original's only limit is that the joiner senses the mate, up to its sight range).</summary>
     public const float JoinRange = 250;
 
-    readonly List<int> guards = [], players = [], protectors = [];
+    readonly List<int> guards = [], protectors = [];
     /// <summary>Per attacker slot: the target (slot, generation) it last took and whether that target has been alerted (<see cref="CombatSystem.Alerts"/>).</summary>
     int[] alertSlot = [], alertGeneration = [];
     bool[] alerted = [], justAlerted = [];
@@ -275,9 +275,6 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     /// <summary>This tick's attacker per attacked player character (target slot, attacker slot; <see cref="OfferSelf"/>), for the decision step's Self preservation.</summary>
     readonly Dictionary<int, int> selfFoes = [];
     long selfFoesTick = -1;
-    /// <summary>This tick's foe per player character that would join a squad mate's or an ally's defence (<see cref="JoinMates"/>, <see cref="HelpAllies"/>), for the decision step's <see cref="JoinFight"/>.</summary>
-    readonly Dictionary<int, int> joinFoes = [];
-    readonly HashSet<int> joiners = [];
 
     public void RegisterSources(DecisionSystem decisions)
     {
@@ -285,42 +282,95 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
         decisions.Register(new SelfPreservation(this));
     }
 
-    /// <summary>The foe player character <paramref name="slot"/> was offered this tick to join a mate's or an ally's defence against, -1 for none (a pure read).</summary>
-    int JoinFoe(World world, int slot) =>
-        selfFoesTick == world.Tick && joinFoes.TryGetValue(slot, out int a) && world.Characters.Next[a].Alive && world.Characters.Cold(a) is { Medical.Incapacitated: false } ? a : -1;
-
     /// <summary>
-    /// A player character joins a squad mate's defence (<see cref="JoinMates"/>) or, with Help Allies, an ally's (<see cref="HelpAllies"/>): the engine's stand-in for 15 Protect allies, a
-    /// priority-3 goal of the player faction (docs/game/ai-tasks.md "Precedence"), so the decision step weighs it against the orders and Self preservation and it beats the jobs. Condition
-    /// (<see cref="CanFight"/>): its task is one the goals come before (idle, a standing task, a job's, 14 Idleness: <see cref="DecisionSystem.GoalsComeFirst"/>) or a bodyguard's follow, not
-    /// Passive, not sneaking outside a fight. Desire 0.6 (engine: below Self preservation's 0.7, above Getting food's 0.5 at most), weight 1; listed first, so a tie goes to the original's goals.
-    /// It runs while a defence (row 13) is its fight.
+    /// 15 Protect allies of a player character (the player faction's <c>AI Goals</c>: priority 3, weight 1, so it comes after the orders and the urgent jobs and before every job; the
+    /// chooser's step 4, docs/game/ai-tasks.md "Precedence"). Desire <c>FUN_140599b90</c>, <b>Verified</b>: 0 while Passive or sneaking outside a fight and for a slave holding job 187; else
+    /// the finder's best ally, x0.5 while carrying. The finder <c>FUN_14099ca10</c> (<see cref="BestAlly"/>) takes the player's sensed allies that hold a fight target, weighted by their
+    /// distance; the plan is 13 Attacking attackers of (<c>AI::findAttackerOf</c>, <see cref="CombatSystem.BestAttackerOf"/>), so the goal needs an attacker within <see cref="ProtectReach"/>
+    /// of the ally. Listed before Self preservation (a tie goes to the later goal). It runs while a defence (row 13) is its fight; with no ally left the desire stays at Self preservation's 0.7
+    /// (engine: the fight task ends by itself).
     /// </summary>
     sealed class JoinFight(RetaliationSystem owner) : IDecisionSource
     {
-        public string Name => "Join a mate's fight (engine)";
+        public string Name => "15 Protect allies";
         public DecisionStep Step => DecisionStep.Goals;
-        public int Key => 13;
-        public float Desire(World world, int slot) => 0.6f;
+        public int Key => 15;
+
+        public float Desire(World world, int slot) =>
+            owner.BestAlly(world, slot, out _) is var score && score > 0 ? score : 0.7f;
 
         public DecisionCheck CanRun(World world, int slot)
         {
             var table = world.Characters;
             var cold = table.Cold(slot)!;
             var task = (CharacterTask)table.Next[slot].Task;
-            if (task == CharacterTask.Attack && cold.Running is { Row: Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ATTACKERS_OF, Source: TaskSource.Reaction } run && run.Runs(task)) return DecisionCheck.Runs;
-            // 15 Protect allies scores 0 for a slave holding job 187 (FUN_140599b90, Verified), sneaking or not.
-            if (cold.SlaveState == 1 && Kidnap.ObedientSlave.HasJob(cold)) return DecisionCheck.No("an obedient slave (15 scores 0)");
-            if (owner.JoinFoe(world, slot) < 0) return DecisionCheck.No("no mate or ally to join");
-            return CanFight(table, slot, []) ? DecisionCheck.Run : DecisionCheck.No("busy (engine rule)");
+            if (task == CharacterTask.Attack)
+                return cold.Running is { Row: Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ATTACKERS_OF } run && run.Runs(task) ? DecisionCheck.Runs : DecisionCheck.No("fighting on another plan");
+            // Desire 0: Passive, or sneaking outside a fight (FUN_1405c9750), or an obedient slave (FUN_140597380 job 187).
+            if (!Helps(table, slot, [])) return DecisionCheck.No("cannot fight, or desire 0 (Passive, or sneaking outside a fight)");
+            if (cold.SlaveState == 1 && Kidnap.ObedientSlave.HasJob(cold)) return DecisionCheck.No("an obedient slave (desire 0)");
+            return owner.Plan(world, slot, out _) >= 0 ? DecisionCheck.Run : DecisionCheck.No(owner.BestAlly(world, slot, out _) > 0 ? "no attacker of the ally in reach" : "no fighting ally in sight");
         }
 
         public void Start(World world, int slot)
         {
             var table = world.Characters;
-            int a = owner.JoinFoe(world, slot);
-            world.Defer(new AttackOrder([table.IdOf(slot)], table.IdOf(a)) { Tick = world.Tick + 1, Defensive = true });
+            if (owner.Plan(world, slot, out _) is var foe && foe < 0) return;
+            world.Defer(new AttackOrder([table.IdOf(slot)], table.IdOf(foe)) { Tick = world.Tick + 1, Defensive = true, Source = TaskSource.Goal });
         }
+    }
+
+    /// <summary>
+    /// The finder of 15 / 288 for a player character (<c>FUN_14099ca10</c>, <b>Verified</b>): over the sensed entries tagged ALLY (not down or imprisoned) that were seen or heard at the last
+    /// look, each ally whose AI holds a fight target (<c>FUN_14099a190</c>, taken as 1: its value is <b>Unknown</b>) is worth <c>clamp((1000 - d^2) / 990, 0.1, 1)</c> by the squared distance
+    /// d^2 between the two (<c>FUN_1409b2380</c>: 1 within 3.2 units, 0.1 from 30); an ally of another faction counts only with <see cref="SquadAi.Help"/> and then the value is squared; a slave
+    /// or escaped slave only where the looker may help one (<see cref="SlaveHelpAllowed(World, CharacterCold, Vector3)"/>, tested once, for the first slave met). The best, the first in slot order
+    /// on a tie, capped at 1.2; x0.5 while the looker carries someone (<c>FUN_140599b90</c>). 0 when there is none; <paramref name="ally"/> is that one's slot (-1 for none).
+    /// </summary>
+    float BestAlly(World world, int slot, out int ally)
+    {
+        ally = -1;
+        var table = world.Characters;
+        if (table.Cold(slot) is not { } cold || world.SystemOf<AggroSystem>()?.SensesOf(slot) is not { } senses) return 0;
+        var prev = table.Previous;
+        bool help = (world.Player.SquadAi & SquadAi.Help) != 0, slaveChecked = false, slaveOk = false;
+        float best = 0;
+        foreach (var e in senses.Entries)
+        {
+            if (!e.Now || (e.Tags & (SenseTag.Ally | SenseTag.Ko | SenseTag.Imprisoned)) != SenseTag.Ally || e.Target == slot || combat.TargetOf(e.Target, e.Generation).Slot < 0) continue;
+            if (table.Cold(e.Target) is not { } other) continue;
+            if (other.SlaveState is 1 or 2)
+            {
+                if (!slaveChecked) (slaveChecked, slaveOk) = (true, SlaveHelpAllowed(world, cold, prev[slot].Position));
+                if (!slaveOk) continue;
+            }
+            float v = Math.Clamp((Vector3.DistanceSquared(prev[slot].Position, prev[e.Target].Position) - 1000f) / (10f - 1000f), 0.1f, 1f);
+            if (other.Faction != cold.Faction)
+            {
+                if (!help) continue;
+                v *= v;
+            }
+            if (v > best) (best, ally) = (v, e.Target);
+        }
+        if (ally < 0) return 0;
+        best = Math.Min(best, 1.2f);
+        return table.Cold(slot)!.Carrying.IsNone ? best : best * 0.5f;
+    }
+
+    /// <summary>
+    /// 13 Attacking attackers of for 15 (<c>AI::findAttackerOf</c>, <see cref="CombatSystem.BestAttackerOf"/>): the attacker of <see cref="BestAlly"/>'s ally the player character <paramref name="slot"/>
+    /// fights, -1 for none. A character on Hold takes it only where its post test passes (<see cref="Orders.HoldPost"/>).
+    /// </summary>
+    int Plan(World world, int slot, out int ally)
+    {
+        if (BestAlly(world, slot, out ally) <= 0) return -1;
+        var table = world.Characters;
+        int foe = combat.BestAttackerOf(world, ally, slot);
+        if (foe < 0 || table.Cold(slot) is not { } cold) return -1;
+        var next = table.Next;
+        if (Orders.Holding(cold) && !Orders.HoldPost(next[slot].Position, Orders.HoldPointOf(cold, next[slot].Position), next[foe].Position, next[foe].Velocity, next[foe].Yaw,
+            table.Cold(foe)?.Medical?.Crawling == true || combat.StateOf(table.IdOf(foe)).AttackTech >= 0, true)) return -1;
+        return foe;
     }
 
     /// <summary>
@@ -394,7 +444,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
         }
         // A target taken (or a blow landed) alerts at once and is answered in the same pass; the rest is looked at every CheckEveryTicks.
         bool fresh = false;
-        if (selfFoesTick != world.Tick) { selfFoes.Clear(); joinFoes.Clear(); selfFoesTick = world.Tick; }
+        if (selfFoesTick != world.Tick) { selfFoes.Clear(); selfFoesTick = world.Tick; }
         for (int a = 0; a < table.HighWater; a++)
         {
             justAlerted[a] = false;
@@ -432,15 +482,13 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
         }
         bool periodic = world.Tick % CheckEveryTicks == 0;
         if (!periodic && !fresh) return;
-        // The bodyguards and the player's characters, in slot order, for Guards and HelpAllies (each looked through the whole table per attacker before).
+        // The bodyguards and the NPCs with a protect goal, in slot order, for Guards and ProtectAllies (each looked through the whole table per attacker before).
         guards.Clear();
-        players.Clear();
         protectors.Clear();
         for (int s = 0; s < table.HighWater; s++)
         {
             if (!next[s].Alive || table.Cold(s) is not { } c) continue;
             if (!c.FollowOrder.IsNone) guards.Add(s);
-            if (c.IsPlayer) players.Add(s);
             if (c.Ai is { ProtectsAllies: true }) protectors.Add(s);
         }
         var taken = new HashSet<int>();
@@ -457,7 +505,6 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
             // A gunner leaves its turret only for a melee attacker (task 146's "!iAmBeingMeleeAttacked"); bolts do not bring it down.
             if (st.Ranged && table.Cold(t)?.Gunning is not null) continue;
             var defenders = new List<CharacterId>();
-            joiners.Clear();
             // A player character's own defence is the decision step's (Self preservation, OfferSelf); it is taken here, so it joins no other fight of this pass.
             bool offered = false;
             if (SelfDefends(table, t, taken, next[a].Position))
@@ -472,16 +519,12 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
             bool fights = combat.StateOf(new CharacterId(t, next[t].Generation)).TargetSlot >= 0 || defenders.Count > 0 || offered;
             if (gap.X * gap.X + gap.Z * gap.Z <= ProtectReach * ProtectReach && (table.Cold(a)?.SquadId is not { } foeSquad || foeSquad < 0 || foeSquad != table.Cold(t)?.SquadId))
             {
-                int before = defenders.Count;
                 JoinMates(world, table, t, defenders, taken, fights ? CanProtectFighter : CanProtect);
-                for (int k = before; k < defenders.Count; k++) joiners.Add(defenders[k].Slot);
                 // Protect allies: NPCs of any squad that see an allied defender fighting come to it (a town's guards to a resident a neutral animal attacks).
                 if (fights) ProtectAllies(world, table, t, a, defenders, taken, aggro);
             }
             // Bodyguards of the attacked character come too (Bodyguard, order 45).
             Guards(world, table, t, a, defenders, taken, guards);
-            // Allies come to a defender that is already fighting too.
-            HelpAllies(world, table, t, a, defenders, taken);
             // The Hold order takes on only an attacker its post test accepts (Orders.HoldPost).
             var from = next[a].Position;
             for (int k = defenders.Count - 1; k >= 0; k--)
@@ -489,16 +532,6 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
                 int ds = defenders[k].Slot;
                 if (table.Cold(ds) is { } dc && Orders.Holding(dc)
                     && !Orders.HoldPost(next[ds].Position, Orders.HoldPointOf(dc, next[ds].Position), from, next[a].Velocity, next[a].Yaw, table.Cold(a)?.Medical?.Crawling == true || st.AttackTech >= 0, true)) defenders.RemoveAt(k);
-            }
-            // A player character joining a mate's or an ally's defence is offered it (JoinFight): the decision step weighs it.
-            for (int k = defenders.Count - 1; k >= 0; k--)
-            {
-                int ds = defenders[k].Slot;
-                if (!joiners.Contains(ds) || table.Cold(ds) is not { IsPlayer: true } pc) continue;
-                int foe = combat.BestAttackerOf(world, t, ds);
-                joinFoes.TryAdd(ds, foe < 0 ? a : foe);
-                DecisionSystem.Request(pc);
-                defenders.RemoveAt(k);
             }
             if (defenders.Count == 0) continue;
             // The engine started these this tick (a follow row's fight, a bodyguard's own defence, an NPC's): the decision step leaves the player's alone this tick.
@@ -560,29 +593,6 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     }
 
     /// <summary>
-    /// <see cref="SquadAi.Help"/> (the protect-allies finders <c>FUN_14099ca10</c> / <c>FUN_14099cf80</c>, which take a fighting character of another faction only with the global
-    /// +0x111 set, and then with the weight squared): the player's free characters within <see cref="JoinRange"/> of a defender of another, allied faction (relation 50 or more) join
-    /// its defence, in slot order. The original's distance weighting is not modelled (engine reduction).
-    /// </summary>
-    void HelpAllies(World world, CharacterTable table, int slot, int attacker, List<CharacterId> defenders, HashSet<int> taken)
-    {
-        if ((world.Player.SquadAi & SquadAi.Help) == 0 || combat.Relations is not { } relations || table.Cold(slot) is not { IsPlayer: false, Medical.Incapacitated: false } ally || !relations.Contains(ally.Faction)) return;
-        if (table.Cold(attacker) is not { IsPlayer: false } foe || foe.Faction == world.Player.Faction) return;   // never against its own side
-        var next = table.Next;
-        var at = next[slot].Position;
-        foreach (int s in players)
-        {
-            if (!next[s].Alive || table.Cold(s) is not { IsPlayer: true } c || c.Faction == ally.Faction || !relations.Contains(c.Faction) || !relations.IsAlly(c.Faction, ally.Faction)) continue;
-            if (ally.SlaveState is 1 or 2 && !SlaveHelpAllowed(world, c, next[s].Position)) continue;
-            var d = next[s].Position - at;
-            if (d.X * d.X + d.Z * d.Z > JoinRange * JoinRange || !CanFight(table, s, taken)) continue;
-            defenders.Add(new CharacterId(s, next[s].Generation));
-            joiners.Add(s);
-            taken.Add(s);
-        }
-    }
-
-    /// <summary>
     /// PROTECT_ALLIES (15, 288; finder <c>FUN_14099ca10</c>, achieved by 13 "Attacking attackers of", docs/game/ai-tasks.md "Combat goals"): an NPC with the goal that senses now (its senses
     /// hold the defender, seen or heard at its last look; <paramref name="aggro"/>'s <see cref="AggroSystem.SensesOf"/>) a fighting character of its own or an allied faction (relation 50 or
     /// more) attacks that character's attacker when the attacker is not its ally, whatever their relation, so neutrals count too. Engine reductions: a gunner stays at its turret, and 288's
@@ -627,18 +637,14 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     }
 
     /// <summary>
-    /// Whether a character comes to another's defence: not Passive (<c>scoreProtectAllies</c> is 0 when Passive); a player's character only on a task the decision step's goals come before
-    /// (idle, a standing task, a job's, 14 Idleness, <see cref="DecisionSystem.GoalsComeFirst"/>: its join is a priority-3 goal, <see cref="JoinFight"/>, which beats the jobs) or a
-    /// bodyguard's follow, so not on an order or a goal's or the engine's task.
+    /// Whether an NPC comes to another's defence by the engine's rule: not Passive (<c>scoreProtectAllies</c> is 0 when Passive). A player's character helps by its own goal 15, the decision step's (<see cref="JoinFight"/>).
     /// </summary>
     /// <remarks>
     /// scoreProtectAllies (<c>FUN_140599b90</c>, <b>Verified</b>) is 0 for anyone Passive or sneaking out of a fight, player or NPC: neither comes to a defence.
     /// </remarks>
-    static bool CanFight(CharacterTable table, int slot, HashSet<int> taken) =>
-        Helps(table, slot, taken) && table.Cold(slot) is var cold && table.Next[slot].Task is var task
-        && (!cold!.IsPlayer || task == (byte)CharacterTask.Idle || cold.Guarding && task == (byte)CharacterTask.Follow || DecisionSystem.GoalsComeFirst(table, slot, cold));
+    static bool CanFight(CharacterTable table, int slot, HashSet<int> taken) => Helps(table, slot, taken) && !table.Cold(slot)!.IsPlayer;
 
-    /// <summary><see cref="CanFight"/> without the player's task test: able, not Passive, not sneaking outside a fight.</summary>
+    /// <summary>Able, not Passive, not sneaking outside a fight (<c>scoreProtectAllies</c>'s zero), for anyone.</summary>
     static bool Helps(CharacterTable table, int slot, HashSet<int> taken) =>
         Able(table, slot, taken, out var cold, out _) && (cold.Orders & CharacterOrders.Passive) == 0 && ((cold.Orders & CharacterOrders.Sneak) == 0 || cold.InCombat);
 
@@ -649,14 +655,14 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     /// Whether a squad mate comes to the defence of one that fights (<see cref="CanProtectFighter"/>) or not (<see cref="CanProtect"/>): one that <see cref="CanFight"/>, and of the
     /// NPCs with an AI only those whose combat goal protects (143 PROTECT_OWN_SQUAD finds the attackers of a mate holding a target; PROTECT_ALLIES and the like); the
     /// others join through their stance in <see cref="AggroSystem"/>, and one with no combat goal does not (docs/game/ai-tasks.md "Combat goals"). An NPC without an AI
-    /// and the player's characters keep the old rule.
+    /// keeps the old rule.
     /// </summary>
     static bool CanProtectFighter(CharacterTable table, int slot, HashSet<int> taken) => CanFight(table, slot, taken) && ProtectsMates(table.Cold(slot)!, true);
 
     static bool CanProtect(CharacterTable table, int slot, HashSet<int> taken) => CanFight(table, slot, taken) && ProtectsMates(table.Cold(slot)!, false);
 
     static bool ProtectsMates(CharacterCold cold, bool fights) =>
-        cold.IsPlayer || cold.Ai is not { } mind || fights && (mind.ProtectsSquad || mind.DefendsAllies);
+        cold.Ai is not { } mind || fights && (mind.ProtectsSquad || mind.DefendsAllies);
 
     static bool Able(CharacterTable table, int slot, HashSet<int> taken, out CharacterCold cold, out byte task)
     {

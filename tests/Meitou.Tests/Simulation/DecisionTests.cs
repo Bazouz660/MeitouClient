@@ -1,4 +1,5 @@
 using System.Numerics;
+using Meitou.Data.Gameplay;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Data.Gameplay.Ai;
 using Meitou.Simulation;
@@ -18,9 +19,9 @@ namespace Meitou.Tests.Simulation;
 public class DecisionTests
 {
     /// <summary>The rig after its opening fight is stopped: the fighter stands idle, no longer sneaking, with the decision trace on.</summary>
-    static TaskStartTests.Rig Quiet()
+    static TaskStartTests.Rig Quiet(bool senses = false, Meitou.Data.Gameplay.FactionRelations? relations = null)
     {
-        var rig = new TaskStartTests.Rig(carrying: false, decide: true);
+        var rig = new TaskStartTests.Rig(carrying: false, decide: true, senses: senses, relations: relations);
         rig.World.RunTicks(3);
         rig.Say(new StopCommand([rig.Fighter]) { Tick = rig.World.Tick });
         rig.World.RunTick();
@@ -89,7 +90,7 @@ public class DecisionTests
     [Fact]
     public void A_medic_on_its_job_joins_its_squads_fight_and_treats_after()
     {
-        using var rig = Quiet();
+        using var rig = Quiet(senses: true);
         var f = rig.Fighter;
         var squad = new Squad { Id = rig.World.Squads.NextId(), TemplateId = "p", Faction = 1 };
         rig.World.Squads.Add(squad);
@@ -105,7 +106,7 @@ public class DecisionTests
         var mateFoe = rig.Add(at.X + 12, at.Z, player: false);
         rig.Say(new Meitou.Simulation.Combat.AttackOrder([mateFoe], rig.Mate) { Tick = rig.World.Tick });
         RunUntil(rig, () => rig.Task(f) == CharacterTask.Attack, 2 * RetaliationSystem.CheckEveryTicks + 2, "joining the mate's fight");
-        Assert.Equal("Join a mate's fight (engine)", rig.Cold(f).Decision!.Winner);
+        Assert.Equal("15 Protect allies", rig.Cold(f).Decision!.Winner);
         // Its own attacker's blows land; it fights on and never goes back to its patient while they do.
         var foe = Attacker(rig);
         int blows = 0, lastHit = -1;
@@ -120,8 +121,113 @@ public class DecisionTests
         // The enemies down: the medic job takes its patient up again.
         rig.Cold(foe).Medical!.KnockOut(100000);
         rig.Cold(mateFoe).Medical!.KnockOut(100000);
+        rig.Cold(rig.Enemy).Medical!.KnockOut(100000);   // the rig's far enemy is in the medic's senses: a fight goes on while one is sensed
         RunUntil(rig, () => rig.Task(f) == CharacterTask.Treat && rig.Cold(f).Running is { Row: TaskType.JOB_MEDIC }, 120, "treating again");
     }
+    static IDecisionSource ProtectAllies(TaskStartTests.Rig rig) => rig.World.Decisions.Sources.Single(s => s.Name == "15 Protect allies");
+
+    /// <summary>A fight on the mate: an NPC of the enemy's faction beside it attacks it; the mate (a player's character) fights back.</summary>
+    static CharacterId AttackMate(TaskStartTests.Rig rig)
+    {
+        var at = rig.World.Characters.Next[rig.Mate.Slot].Position;
+        var foe = rig.Add(at.X + 12, at.Z, player: false);
+        rig.Say(new Meitou.Simulation.Combat.AttackOrder([foe], rig.Mate) { Tick = rig.World.Tick });
+        return foe;
+    }
+
+    /// <summary>
+    /// 15 Protect allies for a player character (FUN_140599b90, FUN_14099ca10): any sensed ally of the player's faction that holds a fight target is joined, whatever its squad, and the more
+    /// weakly the farther it is (1 within about 3 units, 0.1 from 30). Catches the old squad-and-range join with its fixed desire.
+    /// </summary>
+    [Fact]
+    public void A_player_character_joins_a_fighting_allys_fight_by_goal_15_weighted_by_distance()
+    {
+        using var rig = Quiet(senses: true);
+        var (far, mate) = (rig.Fighter, rig.Mate);   // 40 units apart
+        var at = rig.World.Characters.Next[mate.Slot].Position;
+        var near = rig.Add(at.X + 2, at.Z, player: true);   // in no squad
+        AttackMate(rig);
+        var goal = ProtectAllies(rig);
+        RunUntil(rig, () => rig.Task(near) == CharacterTask.Attack && rig.Task(far) == CharacterTask.Attack, 2 * RetaliationSystem.CheckEveryTicks + 2, "both joining the mate's fight");
+        Assert.Equal("15 Protect allies", rig.Cold(far).Decision!.Winner);
+        Assert.Equal("15 Protect allies", rig.Cold(near).Decision!.Winner);
+        Assert.InRange(goal.Desire(rig.World, near.Slot), 0.9f, 1.2f);
+        Assert.InRange(goal.Desire(rig.World, far.Slot), 0.1f, 0.2f);
+    }
+
+    /// <summary>
+    /// Self preservation outweighs a far mate's fight (1 or 0.7 against 0.1 x 1.25 while it runs): asked again, a character that joined it and is attacked itself chooses its self-defence. Catches a join that holds its character against its own attacker.
+    /// </summary>
+    [Fact]
+    public void Self_preservation_beats_a_far_mates_fight()
+    {
+        using var rig = Quiet(senses: true);
+        var f = rig.Fighter;
+        var mateFoe = AttackMate(rig);
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Attack, 2 * RetaliationSystem.CheckEveryTicks + 2, "joining the mate's fight");
+        Assert.Equal(mateFoe.Slot, rig.Combat.StateOf(f).TargetSlot);
+        var foe = Attacker(rig);
+        RunUntil(rig, () => rig.Combat.StateOf(f).TargetSlot == foe.Slot, 300, "fighting its own attacker");
+        DecisionSystem.Request(rig.Cold(f));   // the blows ask for it; the engine's retarget came first here
+        rig.World.RunTick();
+        Assert.Equal("32 Self preservation", rig.Cold(f).Decision!.Winner);
+    }
+
+    /// <summary>
+    /// Passive and sneaking outside a fight give the desire 0 (FUN_140599b90): the character stays out of a mate's fight, and joins it once they are off. Catches a join that ignores them.
+    /// </summary>
+    [Fact]
+    public void Passive_or_sneaking_gives_goal_15_no_desire()
+    {
+        using var rig = Quiet(senses: true);
+        var f = rig.Fighter;
+        rig.Cold(f).Orders |= CharacterOrders.Passive;
+        AttackMate(rig);
+        for (int t = 0; t < 90; t++)
+        {
+            rig.World.RunTick();
+            Assert.NotEqual(CharacterTask.Attack, rig.Task(f));
+        }
+        rig.Cold(f).Orders = (rig.Cold(f).Orders & ~CharacterOrders.Passive) | CharacterOrders.Sneak;
+        for (int t = 0; t < 90; t++)
+        {
+            rig.World.RunTick();
+            Assert.NotEqual(CharacterTask.Attack, rig.Task(f));
+        }
+        Assert.Contains(rig.Cold(f).Decision!.Lines, l => l.Contains("15 Protect allies") && l.Contains("desire 0"));
+        rig.Cold(f).Orders &= ~CharacterOrders.Sneak;
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Attack, 2 * RetaliationSystem.CheckEveryTicks + 2, "joining once neither is on");
+    }
+
+    /// <summary>
+    /// An ally of another faction counts only with Help Allies, and then its weight is squared (FUN_14099ca10). Catches the option being ignored, or the allies' fight being joined at full weight.
+    /// </summary>
+    [Fact]
+    public void An_allied_factions_fight_is_joined_only_with_help_allies_and_squared()
+    {
+        FactionData F(string id, params (string, int)[] relations) => new() { Id = id, Name = id, Relations = relations.ToDictionary(r => r.Item1, r => r.Item2) };
+        // 0 the enemies, 1 the player's (the rig's), 2 the allied faction (the rig's NPCs).
+        var relations = FactionRelations.Build([F("enemies", ("Nameless", -80), ("allies", -80)), F("Nameless", ("allies", 60), ("enemies", -80)), F("allies", ("Nameless", 60), ("enemies", -80))]);
+        using var rig = Quiet(senses: true, relations);
+        var f = rig.Fighter;
+        var at = rig.World.Characters.Next[f.Slot].Position;
+        var ally = rig.Add(at.X + 22, at.Z, player: false);   // allied faction, 22 units off: the falloff 0.52
+        var foe = rig.Add(at.X + 34, at.Z, player: false);
+        rig.Cold(foe).Faction = 0;
+        rig.Say(new Meitou.Simulation.Combat.AttackOrder([foe], ally) { Tick = rig.World.Tick });
+        for (int t = 0; t < 90; t++)
+        {
+            rig.World.RunTick();
+            Assert.NotEqual(CharacterTask.Attack, rig.Task(f));
+        }
+        Assert.Equal(CharacterTask.Attack, rig.Task(ally));
+        rig.World.Player.SquadAi |= SquadAi.Help;
+        var goal = ProtectAllies(rig);
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Attack, 2 * RetaliationSystem.CheckEveryTicks + 2, "joining the allies' fight");
+        Assert.Equal("15 Protect allies", rig.Cold(f).Decision!.Winner);
+        Assert.InRange(goal.Desire(rig.World, f.Slot), 0.2f, 0.45f);
+    }
+
 
     /// <summary>
     /// An order that cannot run falls through (the original's chooser goes on): a First Aid order without a medkit stays queued with its text while its character defends itself. Catches a

@@ -71,7 +71,7 @@ public class TaskStartTests
     /// A player's fighter (attacking a far enemy, so no blow lands) with a medkit and a splint kit, sneaking, and with <paramref name="carrying"/> a downed mate on its shoulder; a hurt mate,
     /// a downed NPC, an awake NPC, a second enemy and a prisoner; the player's well, an unfinished shed, a bed, an empty cage and the prisoner's locked one, and an item on the ground; the
     /// movement, first aid, body, carry, bed, construction, production, combat, crime, arrest and lock systems in the game's order; <paramref name="decide"/> adds feeding and retaliation
-    /// after combat and town duties after carrying, with an outpost and a store round the rig (the decision step's self-defence and food goals).
+    /// after combat and town duties after carrying, with an outpost and a store round the rig (the decision step's self-defence and food goals); <paramref name="senses"/> adds the aggro system's looks (attack on sight off) after retaliation, over <paramref name="relations"/> (the combat system reads them too) when given.
     /// </summary>
     internal sealed class Rig : IDisposable
     {
@@ -83,7 +83,7 @@ public class TaskStartTests
         readonly OpenGroundWalkability walk = new(SyntheticTown.Ground);
         readonly ItemFactory items;
 
-        public Rig(bool carrying, bool decide = false, bool slaves = false)
+        public Rig(bool carrying, bool decide = false, bool slaves = false, bool senses = false, FactionRelations? relations = null)
         {
             var db = Database();
             var data = PopulationData.Create(db, []);
@@ -103,10 +103,13 @@ public class TaskStartTests
             {
                 systems.Insert(systems.IndexOf(carry) + 1, new TownDutySystem(data, new PopulationSystem(data), carry));
                 systems.InsertRange(systems.IndexOf(Combat) + 1, [new FeedSystem(items), new RetaliationSystem(Combat)]);
+                // The senses the protect-allies finder reads (15, docs/game/ai-tasks.md "Combat goals"); attack on sight stays off so the other scenarios are not changed.
+                if (senses) systems.Insert(systems.IndexOf(Combat) + 3, new AggroSystem(relations ?? data.Relations, new AggroSettings { AttackOnSight = false }));
             }
             // The slaves' Obedient Slave job (187) is the captive system's.
             if (slaves) systems.Add(new CaptiveSystem(data, Combat));
             World = new SimWorld(new WorldSettings { Seed = 7, PublishSnapshots = false }, walk, systems);
+            if (relations is not null) Combat.Relations = relations;
             World.Player.Faction = 1;
             string Site(string record, float x, float z, bool complete)
             {
