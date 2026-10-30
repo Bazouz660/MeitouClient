@@ -44,6 +44,8 @@ public static class TaskProfiles
         [TaskType.GO_HOME_AND_GO_TO_BED] = new(Special, 2, 8, true),
         [TaskType.GO_HOME_AND_GO_TO_BED_SECURE] = new(Special, 2, 8, true),
         [TaskType.RUN_AWAY_HOMETOWN] = new(Special, 0.05f, 0.15f),
+        // Home territory aggression: AI slot 41, 0.5 (docs/game/ai-tasks.md "Combat goals", Observed). 16, 21, 34, 143 desire 1 (slot 19, 16's own zeros apart); 15 / 288 their own (AiSystem.Fights.cs).
+        [TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME] = new(0.5f),
     };
 
     // Flat by type number for the think's hot loop.

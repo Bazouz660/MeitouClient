@@ -119,7 +119,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         {
             if (!prev[i].Alive || table.Cold(i) is not { Ai: { Squad: { Ai: { } board } squad } mind } cold) continue;
             // Cheapest test first: most characters are not due this tick.
-            if ((world.Tick + i) % every != 0 && mind.Version == board.Version) continue;
+            if ((world.Tick + i) % every != 0 && mind.Version == board.Version && !mind.Replan) continue;
+            mind.Replan = false;
             var id = table.IdOf(i);
             var roles = ObeyedRoles(world, squad, cold) ?? board.Roles[(int)RoleOf(squad, id, cold)];
             if (!ReferenceEquals(mind.StanceFrom, roles) || mind.StanceHour != hour)
@@ -185,8 +186,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
 
     /// <summary>
     /// The stance from the combat goals of its role list and race in their hours (the most aggressive wins), and which of the goals that join fights by their own finders are there
-    /// (<see cref="AiMind.ProtectsSquad"/>, <see cref="AiMind.DefendsAllies"/>, <see cref="AiMind.EnforcesLaw"/>, <see cref="AiMind.ProtectsAllies"/>); a character whose lists hold no combat
-    /// goal at all keeps <see cref="AiStance.Aggressive"/>, the rule every NPC had before the AI (engine: the original's character then has no attack goal).
+    /// (<see cref="AiMind.ProtectsSquad"/>, <see cref="AiMind.DefendsAllies"/>, <see cref="AiMind.EnforcesLaw"/>, <see cref="AiMind.ProtectsAllies"/>). The stance only tells the look when to ask
+    /// the AI to think (<see cref="AggroSystem"/>); the goals decide in the chooser. A character whose lists hold no combat goal is <see cref="AiStance.Passive"/>: it starts no fight
+    /// (docs/game/ai-tasks.md "Combat goals").
     /// </summary>
     internal static AiStance StanceOf(AiMind mind, IReadOnlyList<AiGoal> roles, int hour)
     {
@@ -208,7 +210,7 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         for (int k = 0; k < mind.RaceGoals.Count; k++) Take(mind.RaceGoals[k]);
         mind.HasCombatGoals = any;
         (mind.ProtectsAllies, mind.ProtectsSquad, mind.DefendsAllies, mind.EnforcesLaw) = (allies, squad, defends, law);
-        return any ? stance : AiStance.Aggressive;
+        return stance;
     }
 
     /// <summary>
@@ -326,6 +328,8 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
             // Self preservation: the threat level (AI slot 17); Running away: row 35's own (AI slot 55), a goal of the packages that list it.
             AiBehaviour.SelfPreserve => ThreatSource is { } source ? source.ThreatLevel(world, self.Slot, out _) : 0,
             AiBehaviour.Flee => world.Characters.Cold(self.Slot) is { } runner ? SelfPreservation.RunDesire(runner) : 0,
+            // A combat goal: its own desire's zeros and factors, times its finder's factor (1 with a target, AiSystem.Fights.cs).
+            AiBehaviour.Fight => FightDesire(world, self.Slot, type, mind) is var want and > 0 && !FightTargetFor(world, self.Slot, type, mind).IsNone ? want : 0,
             _ => 1,
         };
     }
@@ -805,6 +809,13 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 mind.AssaultTarget = AssaultTargetFor(world, slot, board);
                 if (!mind.AssaultTarget.IsNone) Interlocked.Exchange(ref assaulting, 1);
                 break;
+            case AiBehaviour.Fight:
+                // Stands while the serial step starts the fight on the finder's pick (the combat system walks it there and fights); the request is its own mind's.
+                Become(world, slot, CharacterTask.Idle);
+                mind.FightTarget = FightTargetFor(world, slot, type, mind);
+                mind.FightGoal = type;
+                if (!mind.FightTarget.IsNone) Interlocked.Exchange(ref fighting, 1);
+                break;
             case AiBehaviour.SelfPreserve:
             case AiBehaviour.Flee:
                 // Task_Runaway: the serial flee step takes the request, stops a fight and starts the first run (FleeSystem), then hops until it is safe.
@@ -1151,7 +1162,9 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
         if (Interlocked.Exchange(ref bedding, 0) != 0) LieDown(world);
         if (Interlocked.Exchange(ref shopping, 0) != 0) BuyForShoppers(world);
         combat ??= world.SystemOf<Combat.CombatSystem>();
+        aggro ??= world.SystemOf<AggroSystem>();
         if (Interlocked.Exchange(ref assaulting, 0) != 0) SendAssaults(world);
+        if (Interlocked.Exchange(ref fighting, 0) != 0) SendFights(world);
         bool cadence = world.Tick % Math.Max(1, Settings.PackageEveryTicks) == 0;
         // Each town's turrets are claimed once per cadence, by the squads in squad order (derived, not hashed).
         if (cadence) { turretTaken.Clear(); seatTaken.Clear(); ReserveSeats(world); RefreshPlaces(world); }

@@ -494,9 +494,20 @@ public sealed class AiMind
     /// lists). Set by the think on the mind's own character, taken and cleared by the serial flee step of the same tick, so it is never set between ticks (not hashed).
     /// </summary>
     public FleeAsk FleeRequest { get; set; }
-    /// <summary>Whether its lists hold any combat goal at all (else the stance stays the old default).</summary>
+    /// <summary>
+    /// The fight the think chose for it (a combat goal's, <see cref="AiBehaviour.Fight"/>): the goal and the character the goal's finder (and, for the protect goals, row 13) picked. Set by
+    /// the think on the mind's own character, taken and cleared by <see cref="AiSystem"/>'s serial step of the same tick, which starts the fight; never set between ticks (not hashed).
+    /// </summary>
+    public TaskType FightGoal { get; set; }
+    public CharacterId FightTarget { get; set; } = CharacterId.None;
+    /// <summary>
+    /// It thinks at the next tick whatever its cadence (a replan request, engine stand-in for the original's triggers): set in serial steps by a sighting of its own or of a squad mate
+    /// (<see cref="AggroSystem"/>), an alert near it (<see cref="RetaliationSystem"/>) or a mate's fight start; cleared by that think.
+    /// </summary>
+    public bool Replan { get; set; }
+    /// <summary>Whether its lists hold any combat goal at all (else the stance is <see cref="AiStance.Passive"/>: no fight on sight).</summary>
     public bool HasCombatGoals { get; set; }
-    /// <summary>Whether a PROTECT_ALLIES goal (15 or 288) is in its lists and hours: it defends allies of other squads against any attacker (<see cref="RetaliationSystem"/>).</summary>
+    /// <summary>Whether a PROTECT_ALLIES goal (15 or 288) is in its lists and hours: an alert to an ally it senses asks it to think (<see cref="RetaliationSystem"/>).</summary>
     public bool ProtectsAllies { get; set; }
     /// <summary>
     /// The combat goals in its lists and hours that join fights by their own finders (docs/game/ai-tasks.md "Combat goals"; the <see cref="Stance"/> keeps only the highest): 143 PROTECT_OWN_SQUAD,
@@ -539,6 +550,7 @@ public sealed class AiMind
         if (BedAt is { } bed) hasher.Add(Rng.StableHash(bed));
         if (!FollowTarget.IsNone) hasher.Add(FollowTarget);
         if (!AssaultTarget.IsNone) hasher.Add(AssaultTarget);
+        if (Replan) hasher.Add(0x5265706C);
         if (LookAbout != Crime.CrimeSystem.FirstLookAboutSeconds) hasher.Add(LookAbout);
         if (NextBuyTick != 0) hasher.Add(NextBuyTick);
         Shopping.Hash(ref hasher);

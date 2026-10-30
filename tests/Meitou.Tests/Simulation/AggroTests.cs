@@ -1,6 +1,9 @@
 using System.Numerics;
+using Meitou.Data;
 using Meitou.Data.Gameplay;
+using Meitou.Data.Gameplay.Ai;
 using Meitou.Simulation;
+using Meitou.Simulation.Ai;
 using Meitou.Simulation.Bodies;
 using Meitou.Simulation.Combat;
 using Meitou.Tests.Combat;
@@ -98,7 +101,8 @@ public class AggroTests
         public void Hash(ref StateHasher hasher) { }
     }
 
-    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, ITickSystem? extra = null)
+    /// <summary>The arena; <paramref name="ai"/> adds the AI (first, as the standard order has it), which runs the squads given goal lists (<see cref="Lists"/>).</summary>
+    static Arena Make(ulong seed, int threads, FactionRelations? relations = null, AggroSettings? settings = null, ITickSystem? extra = null, bool ai = false)
     {
         relations ??= Relations();
         var combat = new CombatSystem(KatanaTechniques(), Constants, BaseGame, BodyOptions.Default, DuelFixture.Lengths, new CombatOptions { SelfApproach = false, TickMedical = false, RecordLog = true })
@@ -108,8 +112,9 @@ public class AggroTests
         };
         var aggro = new AggroSystem(relations, settings ?? new AggroSettings { RecordLog = true });
         var walk = new OpenGroundWalkability((_, _) => 150);
+        ITickSystem[] mind = ai ? [new AiSystem(new PopulationData { Db = new GameDatabase(), Sites = [], Factions = [], Relations = relations })] : [];
         var world = new SimWorld(new WorldSettings { Seed = seed, Threads = threads, PublishSnapshots = false, MinPartitionSize = 1 }, walk,
-            [new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro, .. extra is null ? Array.Empty<ITickSystem>() : [extra]]);
+            [.. mind, new PursuitSystem(combat), new MovementSystem(new PathService(walk, true)), new BodySystem(BaseGame), combat, new RetaliationSystem(combat), aggro, .. extra is null ? Array.Empty<ITickSystem>() : [extra]]);
         return new Arena(world, combat, aggro, relations);
     }
 
@@ -436,27 +441,38 @@ public class AggroTests
         new FactionData { Id = "drifters", Name = "drifters", Relations = new Dictionary<string, int>() },
     ]);
 
-    /// <summary>Gives a member the stance and goals its AI lists would give (no AI system here, so nothing changes them).</summary>
-    static void Mind(Arena a, Squad squad, CharacterId id, Meitou.Simulation.Ai.AiStance stance, bool protectsSquad = false, bool defendsAllies = false, bool enforcesLaw = false) =>
-        a.World.Characters.Cold(id.Slot)!.Ai = new Meitou.Simulation.Ai.AiMind
-        {
-            Squad = squad, Stance = stance, ProtectsSquad = protectsSquad, DefendsAllies = defendsAllies, ProtectsAllies = defendsAllies, EnforcesLaw = enforcesLaw,
-        };
+    /// <summary>An urgent (priority 3) goal of every hour unless given a window, as an AI package lists it.</summary>
+    static AiGoal Goal(TaskType type, float weight = 1, int start = 0, int end = 100, TaskTargetType target = TaskTargetType.Specific) =>
+        new(new AiTask("t", type.ToString(), type, TaskPriority.Urgent, target, TaskEndEvent.Nothing), start, end, weight);
 
     /// <summary>
-    /// A squad shares a sighting, not the attack (docs/simulation.md "Hostility and relations"): a guard that attacks on sight (16) goes for a bandit, and its Passive mate (combat goals,
-    /// none in its hours), which sees the bandit too, never joins. Catches the squad's free mates being dragged into a member's fight whatever their own goals.
+    /// Gives a squad one AI package with these role lists (the leader takes the first, the others the second, a member made Squad2 the third), so the AI (<see cref="Make"/> with ai) runs
+    /// its members by them.
+    /// </summary>
+    static void Lists(Squad squad, AiGoal[] leader, AiGoal[]? squadList = null, AiGoal[]? squad2 = null)
+    {
+        var board = new Blackboard([new(0, new AiPackage { Id = "p", Name = "p", Roles = [squadList ?? [], squad2 ?? [], leader, [], []] })]);
+        board.Update();
+        squad.Ai = board;
+    }
+
+    /// <summary>Gives the squads given lists their minds (the AI's first serial step), before anyone else is put in the world.</summary>
+    static void Think(Arena a) => a.World.RunTick();
+
+    /// <summary>
+    /// A squad shares a sighting, not the attack (docs/simulation.md "Hostility and relations"): a guard that attacks on sight (16) goes for a bandit, and its mate with no combat goal,
+    /// which sees the bandit too, never joins. Catches the squad's free mates being dragged into a member's fight whatever their own goals.
     /// </summary>
     [Fact]
     public void A_passive_npc_never_joins_its_mates_attack()
     {
-        using var a = Make(5, 1, TownRelations());
+        using var a = Make(5, 1, TownRelations(), ai: true);
         a.Aggro.Combat = a.Combat;
         var o = new Vector2(2000, 2000);
         var shop = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
         CharacterId guard = shop.Members[0], passive = shop.Members[1];
-        Mind(a, shop, guard, Meitou.Simulation.Ai.AiStance.Aggressive);
-        Mind(a, shop, passive, Meitou.Simulation.Ai.AiStance.Passive);
+        Lists(shop, [Goal(TaskType.ATTACK_ENEMIES)]);
+        Think(a);
         var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 100), MathF.PI)).Members[0];
         for (int k = 0; k < (int)(4 / a.World.TickSeconds); k++)
         {
@@ -475,13 +491,13 @@ public class AggroTests
     [Fact]
     public void A_shop_keeps_out_of_a_fight_between_strangers_100_away()
     {
-        using var a = Make(8, 1, TownRelations());
+        using var a = Make(8, 1, TownRelations(), ai: true);
         a.Aggro.Combat = a.Combat;
         var o = new Vector2(2000, 2000);
         var shop = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(8, 0), 0f), (o + new Vector2(-8, 0), 0f));
-        Mind(a, shop, shop.Members[0], Meitou.Simulation.Ai.AiStance.ProtectSquad, protectsSquad: true);
-        Mind(a, shop, shop.Members[1], Meitou.Simulation.Ai.AiStance.Defensive, protectsSquad: true, enforcesLaw: true);
-        Mind(a, shop, shop.Members[2], Meitou.Simulation.Ai.AiStance.Defensive, defendsAllies: true);
+        a.World.Characters.Cold(shop.Members[2].Slot)!.Role = (int)SquadRole.Squad2;
+        Lists(shop, [Goal(TaskType.PROTECT_OWN_SQUAD)], [Goal(TaskType.PROTECT_OWN_SQUAD), Goal(TaskType.ATTACK_TROUBLE_MAKERS)], [Goal(TaskType.PROTECT_ALLIES)]);
+        Think(a);
         var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(0, 100), MathF.PI)).Members[0];
         var drifter = a.SquadOf(Drifters, o, true, (o + new Vector2(0, 110), MathF.PI)).Members[0];
         a.World.Commands.Enqueue(new AttackOrder([bandit], drifter) { Tick = a.World.Tick });
@@ -502,13 +518,13 @@ public class AggroTests
     [Fact]
     public void A_shopkeeper_defends_its_mate_against_a_foe_within_150_of_it()
     {
-        using var a = Make(9, 1, TownRelations());
+        using var a = Make(9, 1, TownRelations(), ai: true);
         a.Aggro.Combat = a.Combat;
         var o = new Vector2(2000, 2000);
         var shop = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
         CharacterId keeper = shop.Members[0], guard = shop.Members[1];
-        Mind(a, shop, keeper, Meitou.Simulation.Ai.AiStance.ProtectSquad, protectsSquad: true);
-        Mind(a, shop, guard, Meitou.Simulation.Ai.AiStance.ProtectSquad, protectsSquad: true);
+        Lists(shop, [Goal(TaskType.PROTECT_OWN_SQUAD)], [Goal(TaskType.PROTECT_OWN_SQUAD)]);
+        Think(a);
         var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 400), MathF.PI)).Members[0];
         a.World.Commands.Enqueue(new AttackOrder([guard], bandit) { Tick = a.World.Tick });
         var table = a.World.Characters;

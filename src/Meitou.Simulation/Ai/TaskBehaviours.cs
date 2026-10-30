@@ -65,6 +65,12 @@ public enum AiBehaviour : byte
     /// ("Leader flees while guards fight", the police stations' slaves), wanted at row 35's desire (<see cref="SelfPreservation.RunDesire"/>) while an enemy is near.
     /// </summary>
     Flee = 19,
+    /// <summary>
+    /// The combat goals that start a fight by their own finder (docs/game/ai-tasks.md "Combat goals"): 16 and 21 attack on sight, 144 in its home territory, 34 a trouble maker in its town,
+    /// 143 the attacker of a squad mate in a fight, 15 and 288 the attacker of a sensed ally in a fight. Wanted at the goal's desire times its finder's factor (1 with a target, else 0;
+    /// <see cref="AiSystem"/>, AiSystem.Fights.cs); the think asks for the fight (<see cref="AiMind.FightTarget"/>) and the serial step starts it, which the combat system fights.
+    /// </summary>
+    Fight = 20,
 }
 
 /// <summary>The engine's table from <see cref="TaskType"/> to <see cref="AiBehaviour"/>, and the TaskData display text (docs/game/ai-tasks.md "TaskData registry", Verified) of the types it acts out.</summary>
@@ -118,11 +124,19 @@ public static class TaskBehaviours
         [TaskType.DEFEAT_SQUAD] = (AiBehaviour.Assault, "Assault"),
         [TaskType.SELF_PRESERVATION] = (AiBehaviour.SelfPreserve, "Self preservation"),
         [TaskType.RUN_AWAY] = (AiBehaviour.Flee, "Running away"),
+        [TaskType.ATTACK_ENEMIES] = (AiBehaviour.Fight, "Attacking enemies"),
+        [TaskType.ATTACK_ENEMIES_AND_NEUTRALS] = (AiBehaviour.Fight, "Attacking others"),
+        [TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME] = (AiBehaviour.Fight, "Home territory aggression"),
+        [TaskType.ATTACK_TROUBLE_MAKERS] = (AiBehaviour.Fight, "Attacking trouble makers"),
+        [TaskType.PROTECT_OWN_SQUAD] = (AiBehaviour.Fight, "Protect close allies"),
+        [TaskType.PROTECT_ALLIES] = (AiBehaviour.Fight, "Protect allies"),
+        [TaskType.PROTECT_ALLIES_STAY_IN_TOWN] = (AiBehaviour.Fight, "Protect allies"),
     };
 
     /// <summary>
-    /// The combat goals and the stance each gives (<b>engine reading</b>: how the original turns a sighting into an attack is <b>Unknown</b>, docs/game/perception.md;
-    /// these goals are the urgent ones its packages list for it). SELF_PRESERVATION (in the <c>AI Goals</c> of 30 races) is not one: fighting back when attacked is the retaliation rule's.
+    /// The combat goals and the stance each gives (<see cref="AiMind.Stance"/>: the look asks the AI to think when the highest of them would take a sighting, <see cref="AggroSystem"/>;
+    /// the goals themselves decide in the chooser, <see cref="AiBehaviour.Fight"/>). SELF_PRESERVATION (in the <c>AI Goals</c> of 30 races) is not one: fighting back when attacked is the
+    /// retaliation rule's.
     /// </summary>
     static readonly Dictionary<TaskType, AiStance> Stances = new()
     {
