@@ -893,11 +893,19 @@ public sealed unsafe class TerrainTextures : IDisposable
 
         // 8 x 8 colour tiles, each box-filtered down to colourSize / 8.
         int part = colourSize / TerrainMaps.OverlayTiles;
+        var tiles = Enumerable.Range(0, TerrainMaps.OverlayTiles * TerrainMaps.OverlayTiles)
+            .Select(t => TerrainMaps.OverlayTile(install, "colour", t % TerrainMaps.OverlayTiles, t / TerrainMaps.OverlayTiles)).ToArray();
+        string? cache = LoadCaches.Disabled ? null : WorldColourCache(tiles, colourSize);
+        if (cache is not null && ReadWorldColour(cache, colourSize * colourSize * 4) is { } cached)
+        {
+            (s.WorldColour, s.WorldColourSize) = (cached, colourSize);
+            return;
+        }
         var colour = new byte[colourSize * colourSize * 4];
-        Parallel.For(0, TerrainMaps.OverlayTiles * TerrainMaps.OverlayTiles, t =>
+        Parallel.For(0, tiles.Length, t =>
         {
             int tx = t % TerrainMaps.OverlayTiles, tz = t / TerrainMaps.OverlayTiles;
-            var path = TerrainMaps.OverlayTile(install, "colour", tx, tz);
+            var path = tiles[t];
             if (!File.Exists(path)) return;
             var img = TextureLoader.LoadImage(File.ReadAllBytes(path));
             int f = Math.Max(1, img.Width / part);
@@ -917,6 +925,46 @@ public sealed unsafe class TerrainTextures : IDisposable
                 }
         });
         (s.WorldColour, s.WorldColourSize) = (colour, colourSize);
+        if (cache is not null) WriteWorldColour(cache, colour);
+    }
+
+    /// <summary>
+    /// The world colour map's disk cache, <c>%LOCALAPPDATA%\Meitou\terrain</c> (neither read nor written with <c>--no-load-cache</c>): decoding the 64 colour tiles
+    /// (2048² PNGs) to shrink them took over a second of every start. Named by a hash of the tiles' paths, sizes and times and the map's size, so a mod's tile counts.
+    /// </summary>
+    static string WorldColourCache(string[] tiles, int size)
+    {
+        var key = new System.Text.StringBuilder(FormattableString.Invariant($"world colour v1 {size}"));
+        foreach (var path in tiles)
+        {
+            var file = new FileInfo(path);
+            key.Append('|').Append(path).Append(file.Exists ? FormattableString.Invariant($" {file.Length} {file.LastWriteTimeUtc.Ticks}") : " none");
+        }
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key.ToString())))[..24].ToLowerInvariant();
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Meitou", "terrain", $"worldcolour_{hash}.bin");
+    }
+
+    static byte[]? ReadWorldColour(string path, int length)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var bytes = File.ReadAllBytes(path);
+            return bytes.Length == length ? bytes : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    static void WriteWorldColour(string path, byte[] colour)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var temporary = path + "." + Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".tmp";
+            File.WriteAllBytes(temporary, colour);
+            File.Move(temporary, path, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
     /// <summary>The terrain material's textures (null where one does not exist yet), for the native draws that read them by bindless index.</summary>
