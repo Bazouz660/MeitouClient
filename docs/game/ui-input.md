@@ -285,7 +285,8 @@ Rendering details: [objects](../render-objects.md#building-sign-highlight).
 - **Right** press (button 1): closes the context menu and remembers the pressed index; right release over the same portrait calls `FUN_140413cd0` with the focus flag set: the same
   select-and-focus as the double click, at once, whatever the hold time. **There is no portrait context menu in the original**, and no right-click menu on any other path of the bar.
 - So the report in GitHub issue #137 (the base game lacks it) is wrong: vanilla focuses on a right click. Meitou (`PlayerInterface.MouseDown` / `MouseUp`): a right release on the pressed portrait selects it
-  (Shift toggles) and centres / flies the camera as the double click; the earlier held-right-click portrait menu (not in the original) is gone.
+  (Shift toggles) and centres / flies the camera as the double click. Meitou switch "Portrait menu" (Advanced settings, on by default; not in the original): a held right press opens the
+  member's context menu, as on the character in the world; a quick release still selects and focuses.
 
 ### Ground item labels
 

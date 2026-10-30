@@ -97,8 +97,14 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         if (button == MouseButton.Right && CloseContextMenu()) return true;
         if (button == MouseButton.Right && MapRightDown(p)) return true;
         // A right press on a squad bar portrait is remembered; its release over the same portrait selects the member and focuses the camera on it, as the double click
-        // (FUN_140413d80, docs/game/ui-input.md "Squad bar portraits"). The original has no portrait menu.
-        if (button == MouseButton.Right && SquadBarMemberAt(p) is { } member) { memberPress = member; return true; }
+        // (FUN_140413d80, docs/game/ui-input.md "Squad bar portraits"). The original has no portrait menu; Meitou's (PortraitMenu) opens on a held press, the quick release still focuses.
+        if (button == MouseButton.Right && SquadBarMemberAt(p) is { } member)
+        {
+            if (PortraitMenu && session.CurrentSnapshot.Characters.FirstOrDefault(c => c.Id == member) is { } shown
+                && ContextPressOn(p, at => Menu(shown.Name, at, Verbs(shown)), () => FocusMember(member, shift))) return true;
+            memberPress = member;
+            return true;
+        }
         if (button == MouseButton.Middle && UiVisible && MapPointerDown(p)) return true;
         if (button == MouseButton.Right && !OverHud(p))
         {
@@ -247,11 +253,7 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
         if (button == MouseButton.Right && memberPress is { } pressed)
         {
             memberPress = null;
-            if (SquadBarMemberAt(p) == pressed)
-            {
-                Select([pressed], shift, toggle: true);
-                if (FlyTo?.Invoke(pressed) != true) CentreOn(pressed);
-            }
+            if (SquadBarMemberAt(p) == pressed) FocusMember(pressed, shift);
             return;
         }
         if (button == MouseButton.Right && MapRightUp(p)) return;
@@ -320,6 +322,15 @@ sealed partial class PlayerInterface(WorldSession session, Func<float, float, fl
     /// <summary>The character the strategy camera follows (a double tap of its number key, F, or a double click on its squad button); panning the camera lets go.</summary>
     public CharacterId? Follow { get; set; }
     CharacterId? memberPress;
+    /// <summary>Holding the right button on a squad bar portrait opens that member's context menu (Advanced settings "Portrait menu"; Meitou only).</summary>
+    public bool PortraitMenu { get; set; } = true;
+
+    /// <summary>A portrait's right click: selects the member (Shift toggles) and focuses the camera on it, as the double click.</summary>
+    void FocusMember(CharacterId member, bool shift)
+    {
+        Select([member], shift, toggle: true);
+        if (FlyTo?.Invoke(member) != true) CentreOn(member);
+    }
     /// <summary>The host's camera flight to a double-clicked squad member (Advanced settings "Character flights"); false: centre on it at once.</summary>
     public Func<CharacterId, bool>? FlyTo { get; set; }
     /// <summary>A third press (a single one while the flight to that member is under way): the host ends the flight on it at once.</summary>
