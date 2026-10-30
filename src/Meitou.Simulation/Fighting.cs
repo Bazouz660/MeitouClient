@@ -249,9 +249,12 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     /// Whether a helper may come to the defence of a slave or escaped slave (<c>FUN_140997e80</c> in the protect-allies finder, <b>Verified</b>): its faction is a bandit one, or it
     /// stands in no town, or that town's owner books no bounties (a lawful town's people leave slaves to their fate).
     /// </summary>
-    bool SlaveHelpAllowed(World world, CharacterCold helper, Vector3 at)
+    bool SlaveHelpAllowed(World world, CharacterCold helper, Vector3 at) => SlaveHelpAllowed(world, Towns, combat.Relations, helper, at);
+
+    /// <inheritdoc cref="SlaveHelpAllowed(World, CharacterCold, Vector3)"/>
+    internal static bool SlaveHelpAllowed(World world, PopulationData? towns, Meitou.Data.Gameplay.FactionRelations? factions, CharacterCold helper, Vector3 at)
     {
-        if (Towns is not { } data || combat.Relations is not { } relations) return true;
+        if (towns is not { } data || factions is not { } relations) return true;
         if (relations.Contains(helper.Faction) && relations.Factions[helper.Faction].FundamentalType == Meitou.Data.Gameplay.FundamentalType.Bandit) return true;
         var town = Ai.AiSystem.TownAt(data, world, at);
         if (town.Site < 0) return true;
@@ -654,7 +657,7 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
     static bool CanProtect(CharacterTable table, int slot, HashSet<int> taken) => CanFight(table, slot, taken) && ProtectsMates(table.Cold(slot)!, false);
 
     static bool ProtectsMates(CharacterCold cold, bool fights) =>
-        cold.IsPlayer || cold.Ai is not { } mind || fights && mind.Stance is Ai.AiStance.ProtectSquad or Ai.AiStance.Defensive;
+        cold.IsPlayer || cold.Ai is not { } mind || fights && (mind.ProtectsSquad || mind.DefendsAllies);
 
     static bool Able(CharacterTable table, int slot, HashSet<int> taken, out CharacterCold cold, out byte task)
     {

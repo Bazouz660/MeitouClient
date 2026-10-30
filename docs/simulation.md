@@ -1599,10 +1599,13 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
   held true (movement and the lock-up round deal with doors; the bashers' `DoorPlan` evaluates them); machine empty inputs, output full and jammed (62 to 64) are evaluated for a `Targets.Machine` target (a player's
   machine; no finder gives one yet, the town workers' buildings are level data, [Blocked output](game/buildings-production.md#blocked-output)); every other state is false.
 
-Combat stances (`AiStance`, the most aggressive combat goal in its hours; none at all attacks on sight): PROTECT_OWN_SQUAD joins only
-fights of its own squad, against a mate's target or a mate's attacker (as the original's finder, [ai-tasks](game/ai-tasks.md#combat-goals)), for a mate that is the looker or that it sees now
-(`AggroSystem.Protects`; squad-shared sightings of mates are not counted, **Observed** stand-in);
-the other PROTECT goals still join any fighting enemy (engine).
+Combat stances (`AiStance`, the most aggressive combat goal in its hours; none at all attacks on sight) and the goals below attack on sight (`AiMind.ProtectsSquad`, `DefendsAllies`,
+`EnforcesLaw`): attack on sight (16, 21) takes any enemy the look senses; below it the look takes an enemy only when one of the goals in its hours finds it (`AggroSystem.Wants`, the
+original's chooser tries every goal): 144 within the home circle; 143 PROTECT_OWN_SQUAD against a mate's target or a mate's attacker (as the original's finder,
+[ai-tasks](game/ai-tasks.md#combat-goals)), for a mate that is the looker or that it senses now (`AggroSystem.Protects`; squad-shared sightings of mates are not counted, **Observed**
+stand-in); 15 / 288 (41 and 45 by an engine reading) against the attacker or the target of an ally it senses now that fights, within 150 of that ally (`DefendsAlly`); 34 Law enforcer
+in a town against one of the same town attacking an ally (`StopsTroubleMaker`; its partly **Unknown** gates left out). Retaliation's squad defence takes an NPC with 143 or an ally
+defender (`RetaliationSystem.ProtectsMates`). The look needs the enemy hostile to the looker, so a neutral attacking an ally is fought only through retaliation (`ProtectAllies`, 15 / 288).
 
 Scoring follows the original (`TaskProfiles`: desire, commitment, crowding per goal type); a desire
 the original computes in a function of its own counts as 1. Town goals ([ai-tasks.md](game/ai-tasks.md#town-goals)):

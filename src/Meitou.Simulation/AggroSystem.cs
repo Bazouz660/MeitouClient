@@ -615,6 +615,9 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         public bool Far, FarPass;
         /// <summary>This look works the entries' tags out in full (every <see cref="FarLooks"/>-th look and a forced sense; the fights and the KO and imprisoned bits are read at every look).</summary>
         public bool FullTags;
+        /// <summary>The looker's current town (<see cref="Ai.AiSystem.TownAt"/>), worked out once a look needs it (34's finder).</summary>
+        public CampaignTown Town;
+        public bool TownKnown;
     }
 
     /// <summary>
@@ -1080,12 +1083,8 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         // One it found no path to lately is never picked (isPathImpossible in the attack-on-sight finder's score, docs/game/combat.md "Target score"): else a guard shut in with its
         // enemy (a cage, a locked room) takes it as target again every look and never turns on anyone it can reach.
         if (s.Cold is { } looker && PursuitSystem.PathImpossible(looker, new CharacterId(slot, other.Generation), (long)s.Tick)) return;
-        // The AI's stances (docs/simulation.md "AI", Combat goals): the defensive one joins fights only, the territorial one keeps to its home.
-        if (s.Stance == Ai.AiStance.Defensive && !c.InCombat) return;
-        if (s.Stance == Ai.AiStance.ProtectSquad && (s.SquadFights is { } fights ? s.Squad < 0 || !Protects(ref s, fights, slot) : !c.InCombat)) return;
-        // Territorial (144, FUN_14059fd70, Verified): without a home circle it attacks on sight; outside the circle only one in the looker's own building.
-        if (s.Stance == Ai.AiStance.Territorial && s.Home.R2 != 0 && !(Vector2.DistanceSquared(new Vector2(other.Position.X, other.Position.Z), s.Home.Centre) < s.Home.R2)
-            && (s.World.Sight.BuildingOf(s.Self) is not { } inside || s.World.Sight.BuildingOf(slot) != inside)) return;
+        // The AI's combat goals (docs/game/ai-tasks.md "Combat goals"): attack on sight (16, 21) takes any enemy; below it, an enemy only one of its goals in its hours finds (Wants).
+        if (s.Stance < Ai.AiStance.Aggressive && !Wants(ref s, slot, other.Position)) return;
         // The target score (Combat.TargetScore; Taunt and Passive weigh in there), after the Hold post test for a holding looker. Strictly better only, so a tie keeps the lower slot.
         float d2 = Vector3.DistanceSquared(other.Position, s.Eye);
         float score = Score(ref s, slot, c, d2) ?? float.NegativeInfinity;
@@ -1093,6 +1092,79 @@ public sealed class AggroSystem(FactionRelations relations, AggroSettings? setti
         s.Best = slot;
         s.BestD2 = d2;
         s.BestScore = score;
+    }
+
+    /// <summary>
+    /// Whether one of the looker's combat goals below attack on sight takes the enemy in <paramref name="slot"/>: 144 within its home (<see cref="InTerritory"/>), 143 against a fighting
+    /// mate's foe (<see cref="Protects"/>), the ally defenders (15, 288; 41 and 45 by an engine reading) against a sensed fighting ally's foe (<see cref="DefendsAlly"/>), 34 against one
+    /// attacking an ally in its town (<see cref="StopsTroubleMaker"/>). The original tries each goal of its lists in the chooser; the stance keeps only the highest.
+    /// </summary>
+    static bool Wants(ref Scan s, int slot, Vector3 at)
+    {
+        if (s.Stance == Ai.AiStance.Territorial && InTerritory(ref s, slot, at)) return true;
+        if (s.Cold?.Ai is not { } mind) return false;
+        return mind.ProtectsSquad && s.SquadFights is { } fights && s.Squad >= 0 && Protects(ref s, fights, slot)
+            || mind.DefendsAllies && DefendsAlly(ref s, slot)
+            || mind.EnforcesLaw && StopsTroubleMaker(ref s, slot, at);
+    }
+
+    /// <summary>Territorial (144, <c>FUN_14059fd70</c>, <b>Verified</b>): without a home circle anyone; else one within the circle, or outside it in the looker's own building.</summary>
+    static bool InTerritory(ref Scan s, int slot, Vector3 at) =>
+        s.Home.R2 == 0 || Vector2.DistanceSquared(new Vector2(at.X, at.Z), s.Home.Centre) < s.Home.R2
+        || s.World.Sight.BuildingOf(s.Self) is { } inside && s.World.Sight.BuildingOf(slot) == inside;
+
+    /// <summary>
+    /// 15 / 288 PROTECT_ALLIES (finder <c>FUN_14099ca10</c>, achieved by 13 <c>AI::findAttackerOf</c> <c>FUN_14099c3b0</c>, <b>Verified</b>; docs/game/ai-tasks.md "Combat goals"): an ally the
+    /// looker senses now (an entry tagged ALLY, seen or heard, not down) that holds a target (<c>FUN_14099a190</c>), and the enemy in <paramref name="slot"/> is its attacker or its own target
+    /// (that one only when either regards the other an enemy), within <see cref="RetaliationSystem.ProtectReach"/> of it. A slave or escaped slave ally only where the looker may help one
+    /// (<c>FUN_140997e80</c>); a slave obeying another squad (job 187) defends nobody (<c>FUN_140599b90</c>'s 0). Engine: the 41 and 45 goals take the same rule (their finders are
+    /// <b>Unknown</b>); the looker's own attacker is its self-defence's (<see cref="RetaliationSystem"/>).
+    /// </summary>
+    static bool DefendsAlly(ref Scan s, int slot)
+    {
+        if (s.Fights is not { } combat || s.Cold is { SlaveState: 1, SlaveMaster: >= 0 }) return false;
+        var prev = s.Table.Previous;
+        int gen = prev[slot].Generation;
+        var (own, ownGen) = combat.TargetOf(slot, gen);
+        if (own >= 0 && own != s.Self && FightingAlly(ref s, combat, own, ownGen) && Within(prev, slot, own, RetaliationSystem.ProtectReach)) return true;
+        var list = s.Block.entries;
+        for (int k = 0; k < list.Count; k++)
+        {
+            var e = list[k];
+            if (e.Target == slot || e.Target == own) continue;
+            var (t, tg) = combat.TargetOf(e.Target, e.Generation);
+            if (t != slot || tg != gen || !FightingAlly(ref s, combat, e.Target, e.Generation) || !Within(prev, slot, e.Target, RetaliationSystem.ProtectReach)) continue;
+            if (s.Table.Cold(e.Target) is { } ally && s.Table.Cold(slot) is { } foe && (IsEnemy(s.Relations, ally.Faction, foe.Faction) || IsEnemy(s.Relations, foe.Faction, ally.Faction))) return true;
+        }
+        return false;
+    }
+
+    /// <summary>An entry of the looker's senses tagged ALLY and not down, seen or heard at the last look, that holds a fight target, and that the looker may help (the slave gate).</summary>
+    static bool FightingAlly(ref Scan s, Combat.CombatSystem combat, int ally, int generation) =>
+        s.Block.TryGet(new CharacterId(ally, generation), out var e) && e.Now && (e.Tags & (SenseTag.Ally | SenseTag.Ko)) == SenseTag.Ally && combat.TargetOf(ally, generation).Slot >= 0
+        && (s.Table.Cold(ally) is not { SlaveState: 1 or 2 } || RetaliationSystem.SlaveHelpAllowed(s.World, s.Towns, s.Relations, s.Cold!, s.Eye));
+
+    static bool Within(ReadOnlySpan<CharacterHot> prev, int a, int b, float reach)
+    {
+        var d = prev[a].Position - prev[b].Position;
+        return d.X * d.X + d.Z * d.Z <= reach * reach;
+    }
+
+    /// <summary>
+    /// 34 ATTACK_TROUBLE_MAKERS, "Law enforcer" (finder <c>FUN_14099baa0</c> over <c>FUN_14099b820</c>, <b>Verified</b> structure; docs/game/ai-tasks.md "Combat goals"): nothing while the looker
+    /// is in no town (its current town, <c>getCurrentTownLocation</c>); else a sensed character in the same town that is attacking (its fight target, <c>FUN_1405ca6f0</c>) one the looker
+    /// regards as an ally. Engine: the finder's gates on the attacker's status fields <c>+0xac</c> / <c>+0xa0</c> and AGGRESSOR tag, and its branch for an attacked innocent of another
+    /// faction (no bounty, not a bandit's victim), are <b>Unknown</b> in part and left out.
+    /// </summary>
+    static bool StopsTroubleMaker(ref Scan s, int slot, Vector3 at)
+    {
+        if (s.Fights is not { } combat || s.Towns is not { } towns) return false;
+        var prev = s.Table.Previous;
+        var (v, vg) = combat.TargetOf(slot, prev[slot].Generation);
+        if (v < 0 || v == s.Self || (uint)v >= (uint)s.Table.HighWater || !prev[v].Alive || prev[v].Generation != vg || s.Table.Cold(v) is not { } victim
+            || !(victim.Faction == s.Faction || s.Relations.Contains(victim.Faction) && s.Relations.IsAlly(s.Faction, victim.Faction))) return false;
+        if (!s.TownKnown) (s.Town, s.TownKnown) = (Ai.AiSystem.TownAt(towns, s.World, s.Eye), true);
+        return !s.Town.IsNone && Ai.AiSystem.TownAt(towns, s.World, at) == s.Town;
     }
 
     /// <summary>
