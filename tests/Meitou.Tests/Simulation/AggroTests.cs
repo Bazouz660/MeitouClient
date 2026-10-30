@@ -541,6 +541,135 @@ public class AggroTests
         Assert.True(gapBefore <= RetaliationSystem.ProtectReach + 10, $"it joined with the bandit {gapBefore:0} from the guard");
     }
 
+    static float Gap(SimWorld world, CharacterId x, CharacterId y)
+    {
+        var p = world.Characters.Previous;
+        return Vector2.Distance(new Vector2(p[x.Slot].Position.X, p[x.Slot].Position.Z), new Vector2(p[y.Slot].Position.X, p[y.Slot].Position.Z));
+    }
+
+    /// <summary>
+    /// A squad shares its sightings, not its attacks (docs/game/ai-tasks.md "Combat goals"): a guard that attacks on sight (16) runs at a bandit 400 away, which its shopkeeper (143 only)
+    /// sees too; the shopkeeper does not go with it, and joins by its own goal only once the guard holds the bandit within 150 of it. Catches a mate's sighting pulling a 143-only member
+    /// into the attack (the old squad join).
+    /// </summary>
+    [Fact]
+    public void A_protect_squad_mate_is_not_pulled_into_a_mates_attack_on_sight()
+    {
+        using var a = Make(10, 1, TownRelations(), ai: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var shop = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId keeper = shop.Members[0], guard = shop.Members[1];
+        Lists(shop, [Goal(TaskType.PROTECT_OWN_SQUAD)], [Goal(TaskType.ATTACK_ENEMIES)]);
+        Think(a);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 400), MathF.PI)).Members[0];
+        float gapBefore = Gap(a.World, guard, bandit);
+        bool guardFirst = false;
+        for (int k = 0; k < (int)(15 / a.World.TickSeconds) && !a.Fighting(keeper); k++)
+        {
+            gapBefore = Gap(a.World, guard, bandit);
+            a.World.RunTicks(1);
+            guardFirst |= a.Fighting(guard) && !a.Fighting(keeper);
+        }
+        Assert.True(guardFirst, "the guard attacks on sight first, alone");
+        Assert.True(a.Fighting(keeper), "the shopkeeper comes to its guard's fight");
+        Assert.Equal(bandit.Slot, a.Combat.StateOf(keeper).TargetSlot);
+        Assert.True(gapBefore <= RetaliationSystem.ProtectReach + 10, $"it joined with the bandit {gapBefore:0} from the guard");
+    }
+
+    /// <summary>
+    /// Protect allies (15, finder <c>FUN_14099ca10</c> with row 13, docs/game/ai-tasks.md "Combat goals"): a resident of the town (another squad) runs at a bandit 400 away; a gate guard of the
+    /// town that senses the resident joins only once the bandit is within 150 of the resident, against that bandit, and a shop beside it (a shopkeeper with 143, a shop guard with 143 and 34)
+    /// stays out, since none of its members fights. Catches a defender joining a fight far from the ally, and a shop joining a battle of its faction that involves none of its members.
+    /// </summary>
+    [Fact]
+    public void A_gate_guard_defends_a_sensed_ally_within_150_of_its_foe_and_a_shop_beside_it_stays_out()
+    {
+        using var a = Make(12, 1, TownRelations(), ai: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var shop = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(8, 0), 0f));
+        Lists(shop, [Goal(TaskType.PROTECT_OWN_SQUAD)], [Goal(TaskType.PROTECT_OWN_SQUAD), Goal(TaskType.ATTACK_TROUBLE_MAKERS)]);
+        var gate = a.SquadOf(Town, o, true, (o + new Vector2(-30, 0), 0f));
+        Lists(gate, [Goal(TaskType.PROTECT_ALLIES)]);
+        Think(a);
+        CharacterId guard = gate.Members[0];
+        var resident = a.SquadOf(Town, o, true, (o + new Vector2(0, 40), 0f)).Members[0];
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(0, 440), MathF.PI)).Members[0];
+        a.World.Commands.Enqueue(new AttackOrder([resident], bandit) { Tick = a.World.Tick });
+        float gapBefore = Gap(a.World, resident, bandit);
+        for (int k = 0; k < (int)(15 / a.World.TickSeconds) && !a.Fighting(guard); k++)
+        {
+            gapBefore = Gap(a.World, resident, bandit);
+            a.World.RunTicks(1);
+        }
+        Assert.True(a.Fighting(guard), "the gate guard comes to the resident's fight");
+        Assert.Equal(bandit.Slot, a.Combat.StateOf(guard).TargetSlot);
+        Assert.True(gapBefore <= RetaliationSystem.ProtectReach + 10, $"it joined with the bandit {gapBefore:0} from the resident");
+        for (int k = 0; k < (int)(5 / a.World.TickSeconds); k++)
+        {
+            a.World.RunTicks(1);
+            foreach (var m in shop.Members) Assert.False(a.Fighting(m), $"shop member {m.Slot} joined at tick {a.World.Tick}");
+        }
+    }
+
+    /// <summary>
+    /// An attack goal is one goal of the chooser (docs/game/ai-tasks.md "Precedence", "Desire and commitment"): a member whose list holds following its leader (priority 3 here, weight 1)
+    /// and 16 Attack enemies sees a bandit; it attacks only when 16 outscores the follow (its weight above 1.25, the follow's continuity bonus once it runs) and only in 16's hours. Catches
+    /// an attack on sight that ignores the goals' weights and hours.
+    /// </summary>
+    [Theory]
+    [InlineData(2f, true, true)]
+    [InlineData(0.5f, true, false)]
+    [InlineData(2f, false, false)]
+    public void An_attack_goal_wins_only_when_it_outscores_the_members_other_goals(float weight, bool inHours, bool attacks)
+    {
+        using var a = Make(14, 1, TownRelations(), ai: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId member = squad.Members[1];
+        int hour = a.World.Hour;
+        var (start, end) = inHours ? (0, 100) : ((hour + 6) % 24, (hour + 8) % 24);
+        Lists(squad, [], [Goal(TaskType.FOLLOW_SQUADLEADER, target: TaskTargetType.Leader), Goal(TaskType.ATTACK_ENEMIES, weight, start, end)]);
+        Think(a);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 200), MathF.PI)).Members[0];
+        a.World.RunTicks((int)(4 / a.World.TickSeconds));
+        Assert.Equal(attacks, a.Fighting(member));
+        if (attacks) Assert.Equal(bandit.Slot, a.Combat.StateOf(member).TargetSlot);
+        else Assert.Equal(TaskType.FOLLOW_SQUADLEADER, a.World.Characters.Cold(member.Slot)!.Ai!.Goal!.Task.Type);
+        Assert.False(a.Fighting(squad.Members[0]), "the leader has no combat goal");
+    }
+
+    /// <summary>
+    /// NPC combat goals in a running fight: a town squad that attacks on sight (16) and protects its own (143), a gate guard squad that protects allies (15) beside it, and a bandit squad
+    /// without an AI that only answers; pinned in <see cref="GoldenHashTests"/> (with the 1, 4 and 16 thread agreement).
+    /// </summary>
+    internal static List<ulong> GoalFightHashes(int threads)
+    {
+        using var a = Make(16, threads, TownRelations(), ai: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var town = a.FacingSquad(Town, o, o + new Vector2(0, 300), o, o + new Vector2(12, 0), o + new Vector2(-12, 0));
+        Lists(town, [Goal(TaskType.ATTACK_ENEMIES), Goal(TaskType.PROTECT_OWN_SQUAD)], [Goal(TaskType.PROTECT_OWN_SQUAD), Goal(TaskType.TERRITORIAL_AGGRESSION_BUT_DONT_LEAVE_HOME)]);
+        var gate = a.FacingSquad(Town, o, o + new Vector2(0, 300), o + new Vector2(-60, 0), o + new Vector2(-70, 10));
+        Lists(gate, [Goal(TaskType.PROTECT_ALLIES)], [Goal(TaskType.PROTECT_ALLIES)]);
+        a.World.RunTick();
+        var bandits = a.FacingSquad(Bandits, o + new Vector2(0, 250), o, o + new Vector2(0, 250), o + new Vector2(15, 260), o + new Vector2(-15, 260));
+        a.FacingSquad(Drifters, o + new Vector2(300, 0), o, o + new Vector2(300, 0));
+        var hashes = new List<ulong>();
+        foreach (int target in new[] { 30, 120, 400, 900 })
+        {
+            a.World.RunTicks(target - (int)a.World.Tick);
+            hashes.Add(a.World.StateHash());
+        }
+        // The scenario covers what it is for: an attack on sight, a mate's protection and an ally's, all by the goals.
+        Assert.Contains(a.Aggro.Log, e => e.Attacker == town.Members[0]);
+        Assert.Contains(a.Aggro.Log, e => e.Attacker != town.Members[0] && town.Members.Contains(e.Attacker));
+        Assert.Contains(a.Aggro.Log, e => gate.Members.Contains(e.Attacker));
+        return hashes;
+    }
+
     /// <summary>The crossroads with a player character among the raiders who then assaults a villager; pinned in <see cref="GoldenHashTests"/>.</summary>
     internal static List<ulong> Hashes(int threads)
     {
