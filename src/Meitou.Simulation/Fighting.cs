@@ -306,6 +306,8 @@ public sealed class RetaliationSystem(CombatSystem combat) : ITickSystem, IDecis
             var cold = table.Cold(slot)!;
             var task = (CharacterTask)table.Next[slot].Task;
             if (task == CharacterTask.Attack && cold.Running is { Row: Meitou.Data.Gameplay.Ai.TaskType.ATTACK_ATTACKERS_OF, Source: TaskSource.Reaction } run && run.Runs(task)) return DecisionCheck.Runs;
+            // 15 Protect allies scores 0 for a slave holding job 187 (FUN_140599b90, Verified), sneaking or not.
+            if (cold.SlaveState == 1 && Kidnap.ObedientSlave.HasJob(cold)) return DecisionCheck.No("an obedient slave (15 scores 0)");
             if (owner.JoinFoe(world, slot) < 0) return DecisionCheck.No("no mate or ally to join");
             return CanFight(table, slot, []) ? DecisionCheck.Run : DecisionCheck.No("busy (engine rule)");
         }

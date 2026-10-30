@@ -75,7 +75,7 @@ public static class PermaJobs
     /// The types the production pick carries out from a list (<see cref="ProductionSystem"/>; the engineer job through the construction system). Every job runs through the decision step
     /// (<see cref="DecisionSystem.RegisterJob"/>), whose contributors are: these and Bodyguard 45 and Staying close 31 / 289 (a follow of the job's character) and the carrying jobs (corpse
     /// disposal 137 / 138, intruders 223 / 273 with 224 / 274) production, medic 58, robotics 57 and splinting 250 <see cref="FirstAid.FirstAidSystem"/>, rescue 148 and foraging 238
-    /// <see cref="Carrying.CarrySystem"/>, put in bed 106 <see cref="Locks.BedSystem"/>, attacking enemies 16 <see cref="AggroSystem"/>. The rest are kept, shown and saved but never started.
+    /// <see cref="Carrying.CarrySystem"/>, put in bed 106 <see cref="Locks.BedSystem"/>, attacking enemies 16 <see cref="AggroSystem"/>, Obedient Slave 187 <see cref="Kidnap.CaptiveSystem"/>. The rest are kept, shown and saved but never started.
     /// </summary>
     public static bool Runs(TaskType type) => type is TaskType.OPERATE_MACHINERY or TaskType.OPERATE_AUTOMATIC_MACHINERY or TaskType.OPERATE_STORAGE or TaskType.JOB_BUILDER or TaskType.MAN_A_TURRET_PLAYER_JOB or TaskType.USE_TRAINING_DUMMY;
 
