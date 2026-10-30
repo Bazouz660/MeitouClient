@@ -727,6 +727,32 @@ public class AggroTests
     }
 
     /// <summary>
+    /// A squad of two whose leader is knocked out is not intact (docs/game/perception.md "Fleeing", <c>FUN_14079acf0</c>): the member standing runs from the bandit it fights, and the HUD's Goal
+    /// line says "Running away" (<c>Task_Runaway</c>'s name) rather than "Moving", its walk's. Catches a run that reads as an aimless walk to the player.
+    /// </summary>
+    [Fact]
+    public void A_squad_member_running_after_its_leader_fell_is_shown_as_running_away()
+    {
+        using var a = Make(31, 1, TownRelations(), ai: true, flee: true);
+        a.Aggro.Combat = a.Combat;
+        var o = new Vector2(2000, 2000);
+        var squad = a.SquadOf(Town, o, true, (o, 0f), (o + new Vector2(10, 0), 0f));
+        CharacterId leader = squad.Leader, member = squad.Members.First(m => m != squad.Leader);
+        Lists(squad, [], [Goal(TaskType.ATTACK_ENEMIES)]);
+        Think(a);
+        var bandit = a.SquadOf(Bandits, o, true, (o + new Vector2(5, 100), MathF.PI)).Members[0];
+        var table = a.World.Characters;
+        for (int k = 0; k < (int)(6 / a.World.TickSeconds) && !a.Fighting(member); k++) a.World.RunTicks(1);
+        Assert.True(a.Fighting(member), "the member attacks the bandit");
+        table.Cold(leader.Slot)!.Medical!.KnockOut(1000);
+        var cold = table.Cold(member.Slot)!;
+        for (int k = 0; k < 2 * 15 && !cold.Fleeing; k++) a.World.RunTicks(1);
+        Assert.True(cold.Fleeing && !cold.FleesAlone, "the broken squad's member runs");
+        a.World.RunTicks(3);
+        Assert.Equal("Running away", Meitou.Simulation.Ai.AiSystem.ActivityText(table.Next[member.Slot], cold));
+    }
+
+    /// <summary>
     /// An NPC defends itself by 32 Self preservation in the chooser (docs/game/ai-tasks.md "Combat goals": desire 1 within 40, plan 13 on its own attacker): a member with no combat goal that
     /// already senses a bandit is attacked by it; the alert puts the bandit on its threats list at once, so its next think takes 32 and the serial step starts the fight two ticks after the alert,
     /// a fight the AI holds across its thinks. Catches the old engine answer outside the chooser, and a threats list stale until the next look (32 at 0, the fight never started or dropped).

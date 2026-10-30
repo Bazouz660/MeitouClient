@@ -235,6 +235,14 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
     internal static bool OwnsFight(CharacterCold cold, AiMind mind) => mind.FightFrom != 0 && cold.Running is { Task: CharacterTask.Attack } run && run.Tick == mind.FightFrom;
 
     /// <summary>
+    /// The HUD's Goal text: the goal's name while the AI holds the character; "Running away" (35's name, <c>Task_Runaway</c>) for an NPC on the flee step, whichever of Self preservation, a goal 35 or a
+    /// broken squad started it, rather than its walk's "Moving"; null for the rest (the HUD then names the movement task).
+    /// </summary>
+    public static string? ActivityText(in CharacterHot n, CharacterCold cold) =>
+        cold is { Fleeing: true, IsPlayer: false, Medical.Incapacitated: not true } ? TaskBehaviours.Text(TaskType.RUN_AWAY)
+        : cold.Ai is { Goal: { } goal } && Holds(n, cold) ? TaskBehaviours.Text(goal.Task.Type) : null;
+
+    /// <summary>
     /// Whether the AI runs the character now: it has a mind and nothing else holds it (a fight it did not start, a flight, an order, a carry, a trade, a knock-out). In its own fight it thinks
     /// as anyone does (on the cadence and the replan triggers) and may leave it for another goal (<see cref="InFight"/>).
     /// </summary>
