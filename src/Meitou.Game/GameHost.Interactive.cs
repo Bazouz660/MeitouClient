@@ -32,6 +32,7 @@ sealed partial class GameHost
         // The world's files are read on a worker from here on: while the window and the device are made, then behind the loading screen.
         var sceneRead = LoadScene is { } readScene ? Task.Run(readScene) : null;
         BeginAudio();
+        bool frameGenerationAtStart = config.FrameGeneration;   // read at start-up only
         using var display = new VulkanDisplay(WindowOptions.Default with
         {
             Size = new Vector2D<int>(o.Width, o.Height),
@@ -40,7 +41,7 @@ sealed partial class GameHost
             IsVisible = false,
             FramesPerSecond = 0,
             UpdatesPerSecond = 0,
-        }, vsync, dlss: true);   // Load before the device so the settings panel can switch to DLSS without restarting.
+        }, vsync, dlss: true, frameGeneration: frameGenerationAtStart);   // Load before the device so the settings panel can switch to DLSS without restarting.
         streamline = display.Streamline;
         ngx = display.Ngx;
         var window = display.Window!;
@@ -118,6 +119,9 @@ sealed partial class GameHost
                     Text: v => v <= 0 ? "Unlimited" : $"{v:0} fps"), config)
             {
                 UpscalerStatus = () => gpu.Post?.ActiveUpscaler ?? "Off",
+                // The state is the start-up setting's; a change shows as pending until the restart.
+                FrameGenerationStatus = () => (display.FrameGeneration ? "active" : frameGenerationAtStart ? "unavailable (see the log), plain swapchain in use" : "off")
+                    + (config.FrameGeneration != frameGenerationAtStart ? $", {(config.FrameGeneration ? "on" : "off")} after a restart" : ""),
                 AttackSlotsChanged = slots => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.AttackSlots = slots; },
                 LateDefencesChanged = on => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.LateDefences = on; },
                 GunnerFacingChanged = on => { foreach (var combat in session.World.Systems.OfType<Meitou.Simulation.Combat.CombatSystem>()) combat.GunnerFacesBarrel = on; },
@@ -485,6 +489,9 @@ sealed partial class GameHost
                     strategy: actions.Pressed(InputAction.ToggleFreeCamera));
             }
         };
+        Meitou.Rendering.UiLayer? uiLayer = null;
+        Meitou.Rendering.Upscalers.FrameGeneration? frameGen = null;
+        bool frameGenTried = false;
         double drawTotal = 0, gpuSum = 0, statsTimer = 0;
         int gpuSamples = 0, statsFrames = 0;
         long statsTicks = 0;
@@ -632,7 +639,20 @@ sealed partial class GameHost
                 // The chain and the panel draw into the window's backbuffer (made again when the size changes).
                 var backbuffer = display.Backbuffer!;
                 gpu.Post!.Target = backbuffer;
-                if (overlay is not null) overlay.Target = backbuffer;
+                // Frame generation (the setting, when the FFX layer is in use): made on the first frame; wanted except under the loading screen and for saved pictures.
+                if (frameGen is not null && display.FrameGenerationLayer is null) { frameGen.Dispose(); frameGen = null; }   // the layer fell back to the plain swapchain
+                if (!frameGenTried && display.FrameGenerationLayer is { } fgLayer)
+                {
+                    frameGenTried = true;
+                    frameGen = Meitou.Rendering.Upscalers.FrameGeneration.TryCreate(display.Context, fgLayer, out var fgWhy);
+                    if (frameGen is null) Console.WriteLine($"frame generation  unavailable: {fgWhy}");
+                }
+                frameGen?.BeginFrame(!Covered && !screenshotRequested && !feedbackShotRequested && takeFile is null, size.X, size.Y);
+                gpu.Post!.FrameGen = frameGen;
+                // The interface draws into a transparent layer of its own, laid over the backbuffer just before the present.
+                uiLayer ??= new Meitou.Rendering.UiLayer(display.Context);
+                var uiTarget = uiLayer.Clear(size.X, size.Y);
+                if (overlay is not null) overlay.Target = uiTarget;
                 profiler?.BeginFrame();
                 // A scene load draws only the loading screen; the warm-up draws whole frames under it (the first frames of a new place build what it needs).
                 bool covered = Covered, sceneLoading = sceneLoad is not null;
@@ -710,7 +730,7 @@ sealed partial class GameHost
                 // The loading screen over the whole frame while a scene loads or the world warms up.
                 if (covered && loading is not null && loadingOverlay is not null)
                 {
-                    loadingOverlay.Target = backbuffer;
+                    loadingOverlay.Target = uiTarget;
                     if (skyArrival is null) loading.Draw(size.X, size.Y);
                     else if (loading.Exiting || skyArrival is { AtStars: true, Arriving: false } && sceneLoad?.Clock.Elapsed.TotalSeconds >= 2)
                         loading.Draw(size.X, size.Y, background: false);
@@ -725,18 +745,22 @@ sealed partial class GameHost
                     if (cursorMode != windowCursor) pointerMouse.Cursor.CursorMode = windowCursor = cursorMode;
                     if (!config.HardwareMouse && !freeLook) player.DrawPointer(pointerWorld ? player.PointerName : "arrow", pointerAt, size.X, size.Y);
                 }
-                display.Present();
+                // World and interface into the top-down picture the window shows (and a screenshot reads). With frame generation on this frame the window shows the
+                // world alone (the backbuffer, flipped by the present) and the layer lays the interface over every frame, generated ones too.
+                bool generating = frameGen is not null && frameGen.Finish(uiTarget);
+                var finalPicture = generating ? null : uiLayer.Composite(backbuffer);
+                display.Present(finalPicture);
                 profiler?.EndFrame();
                 BenchLap(7);
                 PlayBenchRendered(Stopwatch.GetElapsedTime(t0).TotalMilliseconds, display.Context.Pipelines.LatePipelines);
                 if (display.Context.GpuFrameMs > 0) { gpuSum += display.Context.GpuFrameMs; gpuSamples++; }
                 statsFrames++;
-                if (takeFile is not null) { FramebufferCapture.SavePng(display.Context, backbuffer, takeFile, size.X, size.Y); cinema.FrameDone(); }
-                else if (shot) SaveScreenshot(display.Context, backbuffer, size.X, size.Y);
+                if (takeFile is not null) { FramebufferCapture.SavePng(display.Context, finalPicture ?? backbuffer, takeFile, size.X, size.Y, topDown: finalPicture is not null); cinema.FrameDone(); }
+                else if (shot) SaveScreenshot(display.Context, finalPicture ?? backbuffer, size.X, size.Y, topDown: finalPicture is not null);
                 if (feedbackShot)
                 {
                     player.ShotWithoutMenus = false;
-                    FeedbackCaptured(FramebufferCapture.ReadPicture(display.Context, backbuffer, size.X, size.Y), size.X, size.Y);
+                    FeedbackCaptured(FramebufferCapture.ReadPicture(display.Context, finalPicture ?? backbuffer, size.X, size.Y, topDown: finalPicture is not null), size.X, size.Y);
                 }
             }
             statsTimer += dt;
@@ -744,7 +768,7 @@ sealed partial class GameHost
             {
                 // Once a second: the frame, the simulation, then the renderer's lines.
                 stats.Clear();
-                stats.Add($"{statsFrames / statsTimer:0} fps ({(display.VSync ? "vsync" : fpsLimit > 0 ? $"limit {fpsLimit}" : "uncapped")}), gpu {(gpuSamples > 0 ? $"{gpuSum / gpuSamples:0.00}" : "-")} ms");
+                stats.Add($"{statsFrames / statsTimer:0} fps rendered{(frameGen is { Enabled: true } ? ", x2 shown with frame generation" : "")} ({(display.VSync ? "vsync" : fpsLimit > 0 ? $"limit {fpsLimit}{(frameGen is { Enabled: true } ? " shown" : "")}" : "uncapped")}), gpu {(gpuSamples > 0 ? $"{gpuSum / gpuSamples:0.00}" : "-")} ms");
                 long ticks = session.Simulation.TotalTicks - statsTicks;
                 statsTicks = session.Simulation.TotalTicks;
                 stats.Add($"simulation  {ticks / statsTimer:0} ticks/s, {session.CurrentSnapshot.Characters.Count} characters, dropped {session.Simulation.DroppedTicks} ticks in all");
@@ -765,7 +789,8 @@ sealed partial class GameHost
                 Console.WriteLine($"smoke     {totalFrames} frames in {now:0.0} s: {totalFrames / now:0} fps on average, {session.Ticks.TotalTicks} control ticks, {session.Simulation.TotalTicks} simulation ticks, game time {session.Clock.TimeText}"); quit = true; }
             if (!display.VSync && fpsLimit > 0)
             {
-                Limit(frame, now, 1.0 / fpsLimit);
+                // The limit is on presented frames: with frame generation on every rendered frame brings a generated one, so the render rate is half of it.
+                Limit(frame, now, (frameGen is { Enabled: true } ? 2.0 : 1.0) / fpsLimit);
             }
         }
         WritePlayBench(window.FramebufferSize);
@@ -780,6 +805,9 @@ sealed partial class GameHost
         player.DisposeUi();
         EndLoadingScreen();
         overlay?.Dispose();
+        if (gpu.Post is { } postChain) postChain.FrameGen = null;
+        frameGen?.Dispose();   // before the display: it configures the layer's swapchain
+        uiLayer?.Dispose();
         DisposeTitleScene();
         gpu.Dispose();
         silkInput.Dispose();
@@ -843,10 +871,10 @@ sealed partial class GameHost
         session.Input.SetMousePosition(anchor.X, anchor.Y);
     }
 
-    static void SaveScreenshot(GpuContext context, GpuTexture backbuffer, int width, int height)
+    static void SaveScreenshot(GpuContext context, GpuTexture picture, int width, int height, bool topDown = false)
     {
         var file = Path.Combine(Directory.CreateDirectory(@"C:\Temp").FullName, $"meitou-{DateTime.Now:yyyyMMdd-HHmmss}.png");
-        FramebufferCapture.SavePng(context, backbuffer, file, width, height);
+        FramebufferCapture.SavePng(context, picture, file, width, height, topDown);
         Console.WriteLine($"saved     {file}");
     }
 

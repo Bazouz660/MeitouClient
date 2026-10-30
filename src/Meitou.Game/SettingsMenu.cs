@@ -113,6 +113,8 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
     public IReadOnlyList<Slider> Sliders => values.Sliders;
     public IReadOnlyList<Toggle> Toggles => values.Toggles;
     public Func<string>? UpscalerStatus { get; init; }
+    /// <summary>What the Frame generation row reports as its state ("active", "off", ...); null on a host without that setting.</summary>
+    public Func<string>? FrameGenerationStatus { get; init; }
     /// <summary>Applies a new attackers-per-target setting to the running combat system.</summary>
     public Action<int>? AttackSlotsChanged { get; init; }
     /// <summary>Applies the late-dodges setting to the running combat system.</summary>
@@ -235,8 +237,12 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
                         SkinRacesChanged?.Invoke();
                     }, OnOff: true)));
         if (page == 0) result.Insert(2, new("Frame limit", "Used while vertical sync is off; 0 is unlimited.", Slider: frameLimit));
+        if (page == 0 && !OperatingSystem.IsMacOS())
+            result.Insert(3, new("Frame generation (FSR 3)", "Shows a generated frame between each two rendered ones through AMD's FSR 3 frame-interpolation layer: nearly twice the frames shown, with a little more input delay. Works with TAA, FSR and DLSS; needs the FidelityFX library. "
+                + "Takes effect after a restart. Now: " + (FrameGenerationStatus?.Invoke() ?? "off"),
+                Toggle: new("Frame generation (FSR 3)", () => config.FrameGeneration, v => config.FrameGeneration = v, OnOff: true)));
         if (page == 0)
-            result.Insert(3, new("World tick alongside drawing", "Faithful runs the world, then draws it, as the game does. Meitou runs the next world tick while the frame is drawn "
+            result.Insert(OperatingSystem.IsMacOS() ? 3 : 4, new("World tick alongside drawing", "Faithful runs the world, then draws it, as the game does. Meitou runs the next world tick while the frame is drawn "
                 + "whenever the world is busy (big fights, crowds), Always on every frame: much higher frame rates with many characters. "
                 + "Running alongside can add up to 33 ms of input delay (one world tick).",
                 Choice: new(() => ["Faithful (in series)", "Meitou (when busy)", "Always on"], () => (int)config.TickAhead, i => config.TickAhead = (TickAheadMode)i)));

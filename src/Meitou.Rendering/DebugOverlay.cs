@@ -499,8 +499,9 @@ public sealed unsafe class DebugOverlay : IDisposable
         var floats = CollectionsMarshal.AsSpan(batch);
         var vertices = Gpu.Frame.AllocateConstants((ulong)(floats.Length * 4), 16);
         MemoryMarshal.AsBytes(floats).CopyTo(new Span<byte>(vertices.Pointer, floats.Length * 4));
-        // As the GL version drew: no depth test or culling, blended over by alpha.
-        var state = DrawState.For(t.Formats, Gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
+        // As the GL version drew: no depth test or culling, blended over by alpha. The alpha channel accumulates as "over" does, so a transparent target
+        // (the UI layer) ends up premultiplied: colour a * c, alpha a.
+        var state = DrawState.For(t.Formats, Gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, AlphaSrc: BlendingFactor.One, AlphaDst: BlendingFactor.OneMinusSrcAlpha));
         state.Record(cmd, t);
         Span<LegacyProgram.Attribute?> attributes =
         [
@@ -594,7 +595,7 @@ public sealed unsafe class DebugOverlay : IDisposable
             cmd.BeginRendering(targets.Rendering);
             try
             {
-                var state = DrawState.For(targets.Formats, gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha));
+                var state = DrawState.For(targets.Formats, gpu.DepthClamp, blend: new BlendState(true, BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, AlphaSrc: BlendingFactor.One, AlphaDst: BlendingFactor.OneMinusSrcAlpha));
                 state.Record(cmd, targets);
                 var data = CollectionsMarshal.AsSpan(vertices);
                 var upload = gpu.Frame.AllocateConstants((ulong)(data.Length * 4), 16);
