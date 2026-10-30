@@ -640,7 +640,7 @@ Turrets (`CombatSystem.Turrets.cs`, facts: [combat.md](game/combat.md#turrets)):
 order: target choice, reload, aim point while loaded, turning the parts (`TurretRig`), and the fire decision (in range from the gunner, aimed within 1°, steady 0.4 s, line
 along the barrel clear); harpoons are the gunner's bolts (hits, XP, crimes). A gunner is a player character operating its turret (`CharacterTask.Operate`, below) or an NPC
 standing at the turret its squad claimed (AI turret goals); one per turret (lowest slot). `CharacterCold.Gunning` names it (derived); the aggro system starts no fight with a
-turret guard and retaliation skips a gunner shot at. Turret state (angles, aim, loaded harpoons, reload, target) is hashed once a turret was manned; only the loaded harpoons are saved
+turret guard, and a gunner's self-defence takes no shooter (`AiSystem.SelfDefencePick`, the engine answer alike). Turret state (angles, aim, loaded harpoons, reload, target) is hashed once a turret was manned; only the loaded harpoons are saved
 (`current shots`, as the exe; [save](formats/save.md#faction-trust-war-flags-bed-rent-and-turrets)), read when the turret is first manned after loading. Engine choices: NPC turrets have efficiency 1 (no NPC power grid); a player turret's efficiency is its machine's power grant
 (0 unpowered) and has no mount bonus; the reload belongs to the gunner (a new gunner restarts it); every candidate within 1.5 × range counts as sensed and seen; "fights the
 gunner" is the × 1.5 (`FUN_1405ca6f0`); a down target is "slot 0x368"; the turret's facing is its yaw; no Shoot first pass (no such option); the muzzle is the last turning
@@ -670,8 +670,9 @@ look picks the best `Combat.TargetScore` among the entries it saw or heard (the 
 it (`AggroSystem.Takes`). An NPC with a mind that senses a new enemy only asks itself, and its squad mates within twice their own R of it
 ([squad-shared sightings](game/perception.md)), to think at the next tick: the combat goals decide in the chooser ([AI](#ai)). An NPC without a mind starts no fight on sight. Without the Aggro part
 the look keeps the senses only.
-Being taken as a target is answered the same tick when it alerts ([being targeted](game/combat.md#fight-lifecycle-and-orders)), the rest every 15 ticks: the attacked NPC fights back (stand-in
-for 32's fighting provider 13). Others join only by their own goals: an NPC by 143, 15 or 288 in the chooser, whose squad mates (and the attacker's) the alert asks to think
+Being taken as a target alerts the same tick ([being targeted](game/combat.md#fight-lifecycle-and-orders)): the attacker is a threat of its target at once (`AggroSystem.Force`) and an NPC with a
+mind thinks at the next tick, where its 32 Self preservation fights back (row 13) or runs ([AI](#ai)); one without a mind gets the engine's answer, that tick and every 15 ticks after. Others join
+only by their own goals: an NPC by 143, 15 or 288 in the chooser, whose squad mates (and the attacker's) the alert asks to think
 (`RetaliationSystem.AskProtectors`); a player character by its goal 15 ([decision step](#decision-step)); followers and bodyguards by their rows. So gate guards fight the Skimmers
 (relation 0 to every faction, `ATTACK_ENEMIES_AND_NEUTRALS`) that attack townsfolk.
 Orders defer to the next tick. Relations are live state and deed/witness effects have distinct
@@ -1600,7 +1601,7 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
 - Finders: the spots, beds, seats, turrets and towns the act-outs already pick, at the floor point the walk ends on (`PlanContext.Find`); other finders find nothing,
   so such goals do not plan. Rows on the way have their `TaskProfiles` desire, else 1. The exception is DEFEAT_SQUAD 101, whose plan is the goal alone: the finder's
   pick (`AiSystem.AssaultTargetFor`, [ai-tasks](game/ai-tasks.md#combat-goals)) is sent as an `AttackOrder` by the serial step and the combat system fights it.
-  SELF_PRESERVATION 32 is the other exception: its plan is `[35, 32]` when `SelfPreservation.Runs` (a crippled NPC, or one with no working arm, under a threat), else none and `RetaliationSystem` fights back;
+  SELF_PRESERVATION 32 is the other exception: its plan is `[35, 32]` when `SelfPreservation.Runs` (a crippled NPC, or one with no working arm, under a threat), else `[13, 32]` on its own attacker (row 13 on itself, `AiSystem.SelfDefencePick`, started as the combat goals' fights below), else none;
   35 is acted out by `FleeSystem` on the AI's request ([ai-tasks](game/ai-tasks.md#combat-goals)). State 26 stays false.
 - States (`PlanContext.Holds`): location, distance, bed, sitting, home (within 20 of the home), home town, town, weapon drawn, weapon carried
   (`hasWeapon`), carrying, a first aid kit carried (23), the immediate threat (39, `CombatSystem.ImmediateThreat`), deep water (139), a leg down that could be fixed (103, `MedicalState.LegsMessedUp`), inside the home building (107, `AI::iAmInsideTargetBuilding` for a non-building target) and strangers in a private home (141, so a resident does not
@@ -1610,20 +1611,21 @@ whose first step is neither the goal nor a step the engine carries out (`AiSyste
 
 Combat goals (`AiBehaviour.Fight`, `AiSystem.Fights.cs`; [combat goals](game/ai-tasks.md#combat-goals)): 16, 21, 144 and 34 attack whom their finder picks (`AggroSystem.FindFoe`:
 the looker's entries seen or heard at its last look, and its squad mates' within twice its range R, the shared sightings; 34 `FindTroubleMaker`), 143, 15 and 288 the attacker row 13 finds
-(`CombatSystem.BestAttackerOf`, within 150) of the mate or ally with the highest fight threat (`CombatSystem.FightThreat`). They are chosen like every goal; the think writes only its own
+(`CombatSystem.BestAttackerOf`, within 150) of the mate or ally with the highest fight threat (`CombatSystem.FightThreat`), and 32 Self preservation, when it does not run, its own attacker
+(row 13 on itself, `AiSystem.SelfDefencePick`). They are chosen like every goal; the think writes only its own
 mind's request (`AiMind.FightGoal`, `FightTarget`) and stands, and `SendFights` (serial, slot order) defers the fight for the next tick (`AttackOrder`, the goal's provenance; a defence for
-the protect goals), logs it with the aggro system's fights and asks the starter's squad mates to think; a later starter of the same pass picks again with the fights started so far counted
+the protect goals and 32), logs it with the aggro system's fights (not 32's) and asks the starter's squad mates to think; a later starter of the same pass picks again with the fights started so far counted
 as attackers (the original's choosers run one after another). That fight is the AI's own (`AiMind.FightFrom`): `Holds` keeps its fighter, which thinks in it but acts nothing out
-(`InFight`): a combat goal keeps the fight, Self preservation's run or a goal 35 asks the flee step, any other goal makes `LeaveFights` (serial) end the fight, and the next tick acts it out.
-A fight the AI did not start (a self-defence, a duty's, a dialogue's, an assault's) and an engine duty a fight may interrupt (treating, a town errand's walk, a captive job's walk) are weighed
-by `Choose` with only the goals that pre-empt them (`Preempts`): Self preservation's run in such a fight, the combat goals on such a duty (the fight's start ends the duty's task through its
-handler). Replan triggers (`AiMind.Replan`, engine stand-ins): a sighting of the look (the looker and its mates within 2 R), a new enemy sensed by a fighter in its own fight, an alert (the
-squad mates of the attacker and the attacked, and the NPCs with 15 / 288 that sense the attacked one now), a mate's fight start and the end of its own fight (`CombatSystem.EndFight`); else
-the 15-tick cadence. A new enemy is acted on one tick after the look that sensed it (look at T, think at T+1, fight from T+2). Any other character the AI does not hold (fleeing, carried, arresting,
-kidnapping, rescuing, looting, trading) starts no goal fight. The members of a squad the AI does not run (a roaming platoon's active half, a campaign's loaded squad, a template without packages)
-get an engine-run mind (`AiMind.Engine`, `AiSystem.EngineMinds`): the combat goals of their package for their role and of their race, and Self preservation's run, weighed on their routine and
+(`InFight`): a combat goal or 32's fight keeps the fight, Self preservation's run or a goal 35 asks the flee step, any other goal makes `LeaveFights` (serial) end the fight, and the next tick acts it out.
+An engine duty a fight may interrupt (treating, a town errand's walk, a captive job's walk) is weighed by `Choose` with only the combat goals and 32; any other duty, and a fight the AI did not
+start (a dialogue's, an assault's, a duty's), with 32 alone (`Preempts`; in a fight only its run changes anything); the fight's start ends the duty's task through its handler. Replan triggers
+(`AiMind.Replan`, engine stand-ins): a sighting of the look (the looker and its mates within 2 R), a new enemy sensed by a fighter in its own fight, an alert (the attacked NPC with its fight
+off, the squad mates of the attacker and the attacked), a mate's fight start and the end of its own fight (`CombatSystem.EndFight`); else
+the 15-tick cadence. A new enemy is acted on one tick after the look that sensed it (look at T, think at T+1, fight from T+2); so is an attack (alert at T, the attacker a threat at once). Any
+other character the AI does not hold (fleeing, carried) starts no fight. The members of a squad the AI does not run (a roaming platoon's active half, a campaign's loaded squad, a template without packages)
+get an engine-run mind (`AiMind.Engine`, `AiSystem.EngineMinds`): the combat goals of their package for their role and of their race, and Self preservation, weighed on their routine and
 in their own fights; nothing else is acted out ([combat goals](game/ai-tasks.md#combat-goals)). An NPC without a mind (no squad, or between a dropped mind and the next package cadence) only
-fights back.
+fights back, by the engine's answer (`RetaliationSystem`, at any distance; engine choice).
 
 Scoring follows the original (`TaskProfiles`: desire, commitment, crowding per goal type); a desire
 the original computes in a function of its own counts as 1. Town goals ([ai-tasks.md](game/ai-tasks.md#town-goals)):

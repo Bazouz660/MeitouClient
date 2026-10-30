@@ -939,23 +939,35 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   (when the mover stops or is within 200 of its destination: a hop of 1000 + 400 r from where it stands, x and z uniform in [-1, 1] normalised). It has no end of its own: the planner drops it when its goal does
   (under 32, when the threat level falls to 0; as a goal of its own, when its list A `!39, 6` holds, **Observed**). 35 is also a goal of the package `Leader flees while guards fight` (Leader: `Go Home (Run away)`,
   `Run away!`) and of the Slave lists of four police-station packages (0.001 for an NPC).
-  Meitou: `SelfPreservation` (the two desires, the choice), `CombatSystem.ThreatLevel` (slot 17), goal 32 as `AiSystem.SelfPreservationGoal` (once per NPC mind, the list entries ignored): its plan is `[35, 32]` when
-  `SelfPreservation.Runs` (a crippled NPC, or one with no working arm), else none and `RetaliationSystem` fights back (its `Able` leaves the runners out, so nothing is handled twice). The chooser takes 32 in a
-  fight too: in the NPC's own goal fight like any goal, in a fight it did not start (a self-defence, a duty's) as the only goal weighed (`AiSystem.Preempts`). 35 is acted out by
+  Meitou: `SelfPreservation` (the two desires, the choice), `CombatSystem.ThreatLevel` (slot 17), goal 32 as `AiSystem.SelfPreservationGoal` (once per NPC mind, the list entries ignored), a priority-3
+  goal of the chooser like the combat goals: its plan is `[35, 32]` when `SelfPreservation.Runs` (a crippled NPC, or one with no working arm), else `[13, 32]` when row 13 finds an attacker of its own
+  (`AiSystem.SelfDefencePick`: `CombatSystem.BestAttackerOf` with the NPC as subject and looker, its attackers and its own target at any distance; a turret gunner takes no shooter, engine), else none
+  and the next goal is tried. The fight starts as a goal fight (`SendFights`, a defence, not in the aggro log) and is the AI's own: kept while 32 is chosen (a threat on its list beyond 181.7 keeps it at
+  0.7, standing for list A `!159`, engine), left for a higher goal. 35 is acted out by
   `FleeSystem` (the squads' run: first run from the threats' centre, hops, `CharacterCold.Fleeing`): the AI asks (`AiMind.FleeRequest`), a fighter is stopped first. A lone runner stops when no threat attacks it
   within 181.7 or its body takes the choice back to fighting; a goal-35 runner and a broken squad stop when no enemy is in sight and nobody attacks it. Not modelled: the player faction's branch of slot 55 (the
-  player's characters never run), the locked-gate zero of 60, 4's ranged and squad factors, standing up first for a character staying low, and characters without a mind (a squadless NPC, [engine minds](#combat-goals); a crawling one neither fights back nor runs).
+  player's characters never run), the locked-gate zero of 60, 4's ranged and squad factors, standing up first for a character staying low. An NPC without a mind (no squad: scripted and test worlds) gets
+  an engine answer instead (`RetaliationSystem.SelfDefends`, **engine choice**): it fights its attacker at any distance at the alert and every 15 ticks; a crawling one neither fights back nor runs.
+  - **Timing**: the original replans an attacked character whose fight is off (`underMeleeAttack` `FUN_140999f00`, the shot handler `FUN_140999d50`) and chooses at its next AI update
+    (`FUN_1405112b0`, **Verified**: its sense pass `FUN_14085a8d0` runs first, so the threats list is current, then the task system's update `FUN_140511130`), 8 characters a frame in turn
+    ([game loop](game-loop.md#the-character-update-budget)). Meitou: the alert (tick T) puts the attacker on the threats list at once (`AggroSystem.Force`) and asks the NPC to think; it thinks
+    at T+1 and its fight starts at T+2.
+  - **Shot from afar**: 32's desire is 0 for a threat beyond 181.7 (**Verified**, `FUN_140599d20`), and the shot handler (`FUN_140999d50`, **Verified**: forced sense with the alarm flag,
+    sneaking off, TEMP_ENEMY on the shooter, the shooter on the victim's engaged list `FUN_140666e20`, a replan while its fight is off) starts no fight of its own: no "being shot at" state or row
+    was found (**Observed**: row 39 is the melee `+0x2b0`, 158 / 159 the same flag and the threats count). So only another goal answers a far shooter: 143 (the finder counts the looker itself,
+    whose fight threat is 0.05 with the shooter on its engaged list, and row 13 takes its own attacker at any distance; **Observed**), 16 / 21 / 144 through the TEMP_ENEMY tag when it is sensed,
+    or 32 once the shooter is within 181.7. An NPC with none of them stands under fire (**Observed**, decompile reading). Meitou: the same (a shooter's target counts it as an attacker for 143).
 - So a squad with PROTECT goals and no ATTACK goal starts no fight with an idle enemy (**Observed**): e.g. the base `Fog prince squad`
   (`42029-rebirth.mod`, package `fog prince`); its dialogue package `fogman` answers only events 52 and 53 and has no effects.
 - **Meitou, NPCs** (`AiSystem.Fights.cs`, [AI](../simulation.md#ai)): 16, 21, 144, 34, 143, 15 and 288 are priority-3 goals of `AiSystem.Choose`, scored like every goal (desire x finder
   factor x weight x crowding, x1.25 for the current one; in their hours). Desires: 16 1 (0 Passive, sneaking outside a fight, prone), 21 / 34 / 143 1, 144 0.5, 15 / 288 as above; the factor is 1
   with a pick for the attack goals (`AggroSystem.FindFoe`: the looker's sensed entries and its squad mates' within 2 R, the shared sightings) and the capped fight threat for the protect
   goals, whose pick is row 13's attacker (none: the goal fails). Engine gates: a character that cannot fight, crawls, runs away under Self preservation or mans a turret wants none. One whose
-  lists hold no combat goal starts no fight and joins none: it only fights back when attacked (32's stand-in, `RetaliationSystem`). Nothing else starts an NPC's fight on sight or pulls a mate in.
+  lists hold no combat goal starts no fight and joins none: it only fights back when attacked (32 in the same chooser). Nothing else starts an NPC's fight on sight or pulls a mate in.
   - **Squads the AI does not run** (`AiSystem.EngineMinds`, `AiMind.Engine`; engine choice for the routine): `setupAI` gives every character goals (14, 32, its race's, its faction's; [Precedence](#precedence))
     and its squad's packages add theirs, so every NPC of such a squad gets a mind: a roaming platoon's active half (its trip is the population's stand-in), a campaign's loaded squad and a squad
     whose template lists no AI packages. Its combat goals are those of its package for its role (a campaign squad's phase package, as `PopulationSystem.GoalDuty` reads it; a roaming one's
-    the package its stand-in follows; none without packages) and of its race; it weighs only them and Self preservation's run, on its routine (standing, wandering, following, the roaming
+    the package its stand-in follows; none without packages) and of its race; it weighs only them and Self preservation (fight or run), on its routine (standing, wandering, following, the roaming
     leader's walk) and in its own fight, and acts nothing else out; a fight's end gives the routine back (the stand-down). So a template without packages starts no fight (no base race lists an
     attack goal; Cannibal lists 143) and a caravan with 143 / 15 only defends. Not modelled for them: 35 and the packages' other goals (the trip goes on as before). A mind dropped by trade,
     recruitment, capture or storage is made again at the next package cadence (30 ticks); meanwhile, and for an NPC with no squad (scripted worlds only), there is no mind.
@@ -964,17 +976,18 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
     its finder values someone above 0 (143 counts its own fight, the 0.01 floor), row 13 not asked again; another combat goal chosen keeps the fight too (the fight re-targets by itself).
     No fight goal commits, so a goal of a higher score takes the fighter out: the serial step ends the fight (`AiSystem.LeaveFights`) and the next tick acts the goal out. Engine choice: a
     fighter also thinks on the 15-tick cadence, where the original only replans on triggers and lets the plan step end the goal.
-  - **Pre-emption** (`AiSystem.Preempts`): the engine duties stand for goals and jobs of the same chooser below a priority-3 goal, so the combat goals are weighed for an NPC on one whose
+  - **Pre-emption** (`AiSystem.Preempts`): the engine duties stand for goals and jobs of the same chooser below a priority-3 goal, so the combat goals and 32 are weighed for an NPC on one whose
     system lets a fight interrupt it: treating (`FirstAidSystem` lets the patient go), a town errand's walk (`TownDutySystem` waits for the fight and walks on; one carrying an intruder out
-    fights with the body on its shoulder, x0.5 for 15 / 288), a captive job's walk carrying nothing (`CaptiveSystem` gives the job up). Not pre-empted (their systems do not survive a fight
-    or are law work of their own): arrests, kidnaps (the kidnapper walks to its cage again over a fight; the town errand's cage walk shares its row and is left out with it), rescues, lifts,
-    looting, dialogue walks, trades. Their characters start no goal fight until they are back on an AI task.
+    fights with the body on its shoulder, x0.5 for 15 / 288), a captive job's walk carrying nothing (`CaptiveSystem` gives the job up). The other duties (their systems do not survive a fight
+    or are law work of their own: arrests, kidnaps, the cage walks, rescues, lifts, looting, dialogue walks, trades) and a fight the AI did not start (a dialogue's, an assault's, a duty's) get
+    32 alone: their characters start no combat goal's fight until they are back on an AI task, but defend themselves (a fight's start ends the duty's task; in a fight only 32's run changes
+    anything). Nothing for one fleeing, imprisoned, carried or down, nor for a gunner or a carrier in a fight.
   - **Same-tick starts** (`AiSystem.SendFights`): the original's choosers run one after another and a fight's start puts the fighter on its target's engaged list at once, which the next
     chooser's target score counts (`FUN_14059e300`: minus manliness per attacker; **Observed**). Meitou's thinks read the last tick, so the serial step picks again, in slot order, for a starter
     after the first of the tick, with the fights already started counted as attackers: mates of one sighting spread over the foes.
   - **Triggers** (`AiMind.Replan`, engine stand-ins, the same whatever the goals): a new enemy entry in the senses of an NPC that is free or in its own fight (it and its mates within 2 R), an
-    alert (both squads' mates), a mate's fight start, and the end of the NPC's own fight (the plan finished), next to the 15-tick cadence (so an NPC with 15 / 288 that senses an ally's fight weighs
-    it at its next think).
+    alert (the attacked NPC with its fight off and not getting up, as the original's replan; both squads' mates), a mate's fight start, and the end of the NPC's own fight (the plan finished),
+    next to the 15-tick cadence (so an NPC with 15 / 288 that senses an ally's fight weighs it at its next think).
 
 ## Town goals
 

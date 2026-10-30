@@ -385,8 +385,8 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   10% chance of its knockout timer (+0x4f8 = MedicalSystem +0xa0) being set to 10.0: knocked down again for 10 s (**Verified**). The targeting path sets the call's last flag (r9b = 1 in the disassembly), the hit path
   clears it. With the flag, when the target is the player's, or the attacker is the player's and the target is not yet aware of it, the call
   is ignored unless both are in the same building and on the same floor and the target has a clear line to the attacker. So targeting a
-  player's character through a wall, or an unaware NPC from another floor, alerts nobody until a blow lands. Meitou: `CombatSystem.Alerts`, answered by
-  `RetaliationSystem` the same tick (it ends sneaking); same place by `SightMap.PlaceOf`, same floor as within 20 units of height inside, a terrain and
+  player's character through a wall, or an unaware NPC from another floor, alerts nobody until a blow lands. Meitou: `CombatSystem.Alerts`, taken by
+  `RetaliationSystem` the same tick (it ends sneaking, makes the attacker a threat of the target at once, `AggroSystem.Force`, and asks an NPC's AI to think at the next tick); same place by `SightMap.PlaceOf`, same floor as within 20 units of height inside, a terrain and
   building line between the eyes; aware = fighting the attacker or hit by it (engine readings). The 10% knock-down: `CombatSystem.UnderAttackGettingUp`, from the alert and
   from a landed blow outside a fight.
 - **Threats.** The perception pass (`SensoryData::addToThreatsAndFlockingList`) looks at each sensed live character of another faction: its
@@ -414,7 +414,8 @@ Meitou (`CombatSystem.HasSlot` / `MayJoin`, `Fighting.Steer`):
   and the down finder of `FUN_1408cd2d0`. Meitou: `MedicalState.Crawling`.
   Rows 13 and 35 both carry the crippled-repertoire bit (flags `0x61`). The planner takes 35 when 13's chain is worth less: 35 is worth 1 to a crippled character and 4 only 0.1 under a threat within 40, so a
   crippled NPC runs; with no working arm 4 is 0 and 35 (0.001) is all that is left; anyone else fights back, 35 being worth 0.001 (details: [Self preservation](ai-tasks.md#combat-goals)).
-  Meitou: `SelfPreservation`, `RetaliationSystem` leaves such an NPC out of the answer and `FleeSystem` runs it; Passive does not touch this path (exe tooltip: "Passive
+  An attacker beyond 181.7 (a shooter) leaves the desire at 0: only another goal answers it ([shot from afar](ai-tasks.md#combat-goals)).
+  Meitou: `SelfPreservation`, goal 32 in the AI's chooser (both plans; `FleeSystem` runs), `RetaliationSystem` only for an NPC without a mind; Passive does not touch this path (exe tooltip: "Passive
   focuses on non-combat unless attacked first"). Meitou: [order toggles](../simulation.md#order-toggles).
 - **Melee or shooting.** Row 4 Attacking (`AI::scoreMeleeAttack`, slot 53): 1, ×0.1 with Ranged on, ×0.5 when its squad is not intact (`Platoon::isIntact`);
   0 against a caged target; a crippled fighter 0.1 (0.0001 in Block or Hold with no threat within 40; 0 for a non-player non-unique); on Hold
@@ -545,7 +546,7 @@ tick (fewer samples at 0.8^(60 dt) when a tick is longer than a frame) and forge
 
 Data (**Verified**, the base ANIMATION records through `AnimationLibrary`): with the flag on, the lower clips are the `walk lower combat shuffle` trio (speeds −99 to 50) and `jog lower combat fallback` (50 and up); `walk`/`jog`/`run lower` are combat NO.
 
-**Unknown**: the extra offset the steering adds while leading in a non-zero steering mode (`FUN_1402e9420` at radius + 40, `FUN_1402e9530`) and the side terms of `FUN_1402e93c0`; whether the original also holds a chaser from swinging while behind. When an idle character starts fighting back: [lifecycle](#fight-lifecycle-and-orders). Meitou: `RetaliationSystem` engages it at once, and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
+**Unknown**: the extra offset the steering adds while leading in a non-zero steering mode (`FUN_1402e9420` at radius + 40, `FUN_1402e9530`) and the side terms of `FUN_1402e93c0`; whether the original also holds a chaser from swinging while behind. When an idle character starts fighting back: [lifecycle](#fight-lifecycle-and-orders). Meitou: its Self preservation engages it two ticks after the alert ([timing](ai-tasks.md#combat-goals)), and `PursuitSystem` keeps the running flag by the rule above ([simulation](../simulation.md#animation)).
 
 ## Leaving a fight
 

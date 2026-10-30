@@ -145,7 +145,8 @@ Hearing does not imply ordinary visual cone/line-of-sight eligibility.
 - **Entries**: a hash map by character hand (count `+0x28`), no bound; each 0x40 bytes (`FUN_1408580d0`): place `+0x0`, the time last sensed (`+0x10`, world hours), faction `+0x18`,
   slave state `+0x20`, tag word `+0x30` ([tags](#sense-tags-who-is-an-enemy); also bit 3 KO when down or dead, bit 9 imprisoned, 5/6 slave states, 7/10/11/12/13/14/15 other states), seen
   `+0x38`, heard `+0x39`, alert timer `+0x3c` (counted down by the pass).
-- **Pass** (`FUN_14085a070`, with the AI's update): `+0x9c` keeps the last threat total (`+0x88` + `+0x8c`); the counts, threats list, threat sums and nearest enemy (`+0x0`) are cleared;
+- **Pass** (`FUN_14085a070`, at the start of every AI update `FUN_1405112b0` through `FUN_14085a8d0`, before the task system's update `FUN_140511130` that chooses, so a replan reads a current
+  threats list; skipped once when a squad mate's pass was shared, `FUN_14085a770` +0x1d0): `+0x9c` keeps the last threat total (`+0x88` + `+0x8c`); the counts, threats list, threat sums and nearest enemy (`+0x0`) are cleared;
   every existing entry is sensed again first (its character taken out of the gather), then each remaining gathered character (`FUN_1408593d0`): seen (`FUN_140857b10`), else heard
   (`FUN_140857500`). Sensed: the entry is made or refreshed (place, time, seen, heard, tags) and the threats run on it; not sensed: decay. An animal whose last threat total was 0 and is
   above 0 now says `VO_Creature_Alert`. Dropped entries are deleted at the end (`FUN_140856330`).
@@ -158,13 +159,15 @@ Hearing does not imply ordinary visual cone/line-of-sight eligibility.
   vfunc 0x78 null, that reading **Observed**) the place follows the character's real one; dropped past 30 units, 60 when it is in combat mode, the looker's squad holds a long tag of mask 0x232 on it or it is the
   looker's slave, 120 for a player-faction character inside the looker's home building (the looker's faction not "not real", `+0x1d0`). A character whose vfunc 0x240 holds is dropped at once.
 - **Forced sense** `FUN_140858f40` (`AI::underMeleeAttack`, massive alarms, a dropped body, a bolt's victim): no entry → one is made as seen (with its threats); then seen set and the
-  alert timer 5. So an attacker is a threat of its target at once.
+  alert timer 5. An existing entry's threats wait for the next pass, which the replan's AI update runs first. So an attacker is a threat
+  of its target by the time it chooses.
 - **AI `+0xbc`** is `numEnemies`: its reach is the gather's (sight range, [summary](#summary)) plus every entry not yet decayed. Readers: goal 16's finder and `FUN_14059fa70` (gate), the
   urgent kind-2 jobs (`FUN_14050e5b0`), state 6 `isNoEnemiesInVicinity`, the medic job's desire (0.01 while `+0xb0` > 0, else 0.05 while `+0xbc` > 0), IS_OUTNUMBERED, playing dead.
   The fight's end and the chase give-up read the senses directly ([leaving a fight](combat.md#leaving-a-fight)); target choice the threats and the entries ([target selection](combat.md#attack-slots-and-circling)).
 
 Meitou (`SenseBlock`, `CharacterFacts.Senses`): written by `AggroSystem`'s look in `Act` for every living character on its turn (one in `ScanEveryTicks` = 15, by slot), the looker's
-own slot only, and by `AggroSystem.Force` (serial: the alert, a landed blow, a bolt, an alarm). Engine choices: at most 40 entries (`SenseBlock.Cap`; a new one replaces the one sensed
+own slot only, and by `AggroSystem.Force` (serial: the alert, a landed blow, a bolt, an alarm; it also takes an existing entry's threat at once, standing for the pass the original runs before
+its chooser). Engine choices: at most 40 entries (`SenseBlock.Cap`; a new one replaces the one sensed
 longest ago), the gather takes up to 60 new characters within 250 then up to 40 in all within reach; a looker that neither fights nor may attack on sight gathers beyond 250 and works
 the relation part of its tags out only every 4th look (`FarLooks`); slot 125 also counts whoever fights the looker or is fought by it, of any faction (Meitou's scripted fights); the
 threat sums count 1 per threat (no aggression value). Without the Aggro part (sandbox, duel, battle) the look keeps the senses only (`AggroSettings.AttackOnSight` false).
