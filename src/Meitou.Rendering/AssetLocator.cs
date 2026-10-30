@@ -23,8 +23,20 @@ public sealed class AssetLocator
 
     public OgreScriptResources Configured { get; }
 
+    /// <summary>The names found so far: a bare name's lookup tries two paths on disk before the resource folders, and a town's characters asked
+    /// for the same animation and skeleton files thousands of times while loading. A name not found is looked for again next time.</summary>
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Path, string How)> found = new();
+
     /// <summary>Full path of <paramref name="name"/>, or null. <paramref name="how"/> says which rule found it.</summary>
     public string? Find(string name, out string how)
+    {
+        if (found.TryGetValue(name, out var known)) { how = known.How; return known.Path; }
+        var path = Search(name, out how);
+        if (path is not null) found.TryAdd(name, (path, how));
+        return path;
+    }
+
+    string? Search(string name, out string how)
     {
         how = "";
         if (string.IsNullOrWhiteSpace(name)) return null;
