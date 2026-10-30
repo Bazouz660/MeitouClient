@@ -102,6 +102,18 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
             }
             return;
         }
+        // A path that ends short of the target is no path to it (the walkability answers an unreachable goal with the way to the reachable point nearest it, an engine choice): the way the
+        // original's chase reports it, the target goes into the path failures and the fighter stands to be given another (FUN_14060d6a0 -> FUN_140796ed0, docs/game/combat.md "Target score").
+        if (!behind && (n.Flags & Path) != 0 && cold.Path.Length > 0 && EndsShort(cold.Path[^1], n.Goal, next[t].Position.Y))
+        {
+            cold.PathFailed = true;
+            NotePathFailure(world, i, cold, new CharacterId(t, next[t].Generation));
+            n.Flags = (ushort)(n.Flags & ~Path);
+            n.PathCursor = 0;
+            cold.PathRequest = 0;
+            n.TaskTime = RepathSeconds;
+            return;
+        }
         if ((n.Flags & (ushort)(MoveFlags.NeedPath | MoveFlags.Pending)) != 0 || n.TaskTime > 0) return;
         // The point past the runner only now, at most once per RepathSeconds: the navmesh test is a point query per chaser.
         if (behind)
@@ -175,6 +187,12 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         return true;
     }
 
+    /// <summary>How far (units) a path's end may be from the target for the path to count as reaching it (engine choice: the answer for an unreachable goal ends at the reachable point nearest it).</summary>
+    public const float PathEndSlack = 15;
+
+    internal static bool EndsShort(Vector3 end, Vector2 goal, float targetY) =>
+        Vector2.DistanceSquared(new(end.X, end.Z), goal) > PathEndSlack * PathEndSlack || MathF.Abs(end.Y - targetY) > Combat.CombatSystem.SameFloorHeight;
+
     /// <summary>How long a target the fighter found no path to is left out of its target choice (<b>Verified</b> literal 20, <c>AITaskSytem::notifyPathImpossible</c>; read as seconds).</summary>
     public const float PathFailureSeconds = 20;
 
@@ -215,7 +233,7 @@ public sealed class PursuitSystem(CombatSystem combat) : ITickSystem
         var path = world.Walkability is IAgentWalkability agent
             ? agent.FindPath(next[i].Position, prev[t].Position, cold.FootprintRadius, water, cold.RoadPreference)
             : world.Walkability.FindPath(next[i].Position, prev[t].Position);
-        return path.Points.Count > 0;
+        return path.Points.Count > 0 && !EndsShort(path.Points[^1], new Vector2(prev[t].Position.X, prev[t].Position.Z), prev[t].Position.Y);
     }
 
     /// <summary>Whether <paramref name="cold"/> found no path to <paramref name="target"/> within the last <see cref="PathFailureSeconds"/>.</summary>
