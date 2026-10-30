@@ -72,7 +72,7 @@ public interface IJobSource
     DecisionCheck CanRun(World world, int slot, int k);
     /// <summary>Starts job <paramref name="k"/> (serial phases only), after <see cref="CanRun"/> said it can.</summary>
     void Start(World world, int slot, int k);
-    /// <summary>Step 3: whether job <paramref name="k"/> is urgent now (the kind-2 jobs while enemies are sensed, <c>FUN_14050e5b0</c>). Default: never.</summary>
+    /// <summary>Step 3: whether job <paramref name="k"/> is urgent now (the kind-2 jobs while enemies are sensed, Obedient Slave 187 while its gate holds; <c>FUN_14050e5b0</c>). Default: never.</summary>
     bool Urgent(World world, int slot, int k) => false;
     /// <summary>
     /// The character's task is job <paramref name="k"/>'s, which can no longer run, and no other job of the list can: the task ends (the original's idleness takes over at that choice).

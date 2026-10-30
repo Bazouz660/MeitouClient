@@ -2,6 +2,7 @@ using System.Numerics;
 using Meitou.Data.Gameplay.Bodies;
 using Meitou.Data.Gameplay.Ai;
 using Meitou.Simulation;
+using Meitou.Simulation.Ai;
 using Meitou.Simulation.Carrying;
 using Meitou.Simulation.Locks;
 using Meitou.Simulation.FirstAid;
@@ -381,5 +382,86 @@ public class DecisionTests
         Assert.Equal(CharacterTask.Attack, rig.Task(target));
         Assert.Equal(attacker.Slot, rig.Combat.StateOf(target).TargetSlot);
         Assert.StartsWith("32 Self preservation", rig.Cold(target).Decision!.Winner);
+    }
+
+    /// <summary>
+    /// The rig with the fighter enslaved to a master squad 300 units off whose Slave AI Goals list <paramref name="goal"/> (docs/game/ai-tasks.md "Obedient Slave"): the state setter gave it job 187, which the urgent pass runs.
+    /// </summary>
+    static (TaskStartTests.Rig Rig, CharacterId Master) Enslaved(TaskType goal = TaskType.FOLLOW_SLAVEMASTER)
+    {
+        var rig = new TaskStartTests.Rig(carrying: false, decide: true, slaves: true);
+        rig.World.RunTicks(3);
+        rig.Say(new StopCommand([rig.Fighter]) { Tick = rig.World.Tick });
+        rig.World.RunTick();
+        rig.Cold(rig.Fighter).Orders &= ~CharacterOrders.Sneak;
+        rig.World.Decisions.Tracing = true;
+        var follow = new AiGoal(new AiTask("t", "goal", goal, TaskPriority.NonUrgent, TaskTargetType.Specific, TaskEndEvent.Nothing), 0, 24, 1);
+        var board = new Blackboard([new(0, new AiPackage { Id = "slaves", Name = "slaves", Roles = [[], [], [], [], [follow]] })]);
+        board.Update();
+        var squad = new Squad { Id = rig.World.Squads.NextId(), TemplateId = "m", Faction = 2, Ai = board };
+        rig.World.Squads.Add(squad);
+        var master = rig.Add(1300, 2000, player: false);
+        rig.Cold(master).SquadId = squad.Id;
+        squad.Members.Add(master);
+        squad.Leader = master;
+        FixtureRegistry.Enslave(rig.World, rig.Cold(rig.Fighter), 2, squad.Id);
+        return (rig, master);
+    }
+
+    /// <summary>
+    /// An enslaved player character with no order and nothing else runs job 187 (FUN_14050e5b0, the urgent pass): it takes its master's Slave list, here 171, and follows the master, over
+    /// its own idleness. Catches a slave that stands about as a free character.
+    /// </summary>
+    [Fact]
+    public void An_enslaved_player_character_runs_its_master_s_slave_goals()
+    {
+        var (rig, master) = Enslaved();
+        using var _ = rig;
+        var f = rig.Fighter;
+        Assert.Contains(rig.Cold(f).Jobs, j => j.Type == TaskType._SLAVE_OBEDIENCE);
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Follow, 30, "following its master");
+        Assert.Equal(TaskType.FOLLOW_SLAVEMASTER, rig.Cold(f).Running!.Row);
+        Assert.Equal(TaskSource.Job, rig.Cold(f).Running!.Source);
+        Assert.Equal(master, rig.Cold(f).FollowOrder);
+        rig.World.RunTicks(2 * Meitou.Simulation.Production.ProductionSystem.JobCheckTicks);
+        Assert.Equal("Urgent jobs", rig.Cold(f).Decision!.Winner);
+        Assert.Equal(CharacterTask.Follow, rig.Task(f));
+    }
+
+    /// <summary>
+    /// Sneaking switches the job off (the branch's gate, the stealth mode test): a slave whose master's list is 14 Idleness is held by the job (the urgent pass wins) until it sneaks, then the
+    /// step goes on to its own goals, and the job holds it again once it stops sneaking. Catches a slave that cannot get away by sneaking. (A follower's sneaking is set by its leader's
+    /// every update, <c>FUN_14033b350</c>, so a slave following its master cannot sneak; the standing and working ones can.)
+    /// </summary>
+    [Fact]
+    public void Sneaking_stops_the_obedient_slave_job()
+    {
+        var (rig, _) = Enslaved(TaskType.IDLE);
+        using var _ = rig;
+        var f = rig.Fighter;
+        int ask = Meitou.Simulation.Production.ProductionSystem.JobCheckTicks;
+        RunUntil(rig, () => rig.Cold(f).Decision is { Winner: "Urgent jobs" }, 2 * ask, "the job holding it");
+        rig.Cold(f).Orders |= CharacterOrders.Sneak;
+        RunUntil(rig, () => rig.Cold(f).Decision is { Winner: not "Urgent jobs" }, 2 * ask, "the step going on past the job");
+        rig.World.RunTicks(2 * ask);
+        Assert.NotEqual("Urgent jobs", rig.Cold(f).Decision!.Winner);
+        rig.Cold(f).Orders &= ~CharacterOrders.Sneak;
+        RunUntil(rig, () => rig.Cold(f).Decision is { Winner: "Urgent jobs" }, 2 * ask, "the job holding it again");
+    }
+
+    /// <summary>An order is the first source (step 1): a slave told to rest rests, and keeps resting while its job is asked. Catches an obedient slave that overrides the player's order.</summary>
+    [Fact]
+    public void An_order_still_beats_the_obedient_slave_job()
+    {
+        var (rig, _) = Enslaved();
+        using var _ = rig;
+        var f = rig.Fighter;
+        RunUntil(rig, () => rig.Task(f) == CharacterTask.Follow, 30, "following its master");
+        rig.Say(new RestOrder([f]) { Tick = rig.World.Tick });
+        rig.World.RunTick();
+        Assert.Equal(CharacterTask.Rest, rig.Task(f));
+        rig.World.RunTicks(3 * Meitou.Simulation.Production.ProductionSystem.JobCheckTicks);
+        Assert.Equal(CharacterTask.Rest, rig.Task(f));
+        Assert.Equal("Orders", rig.Cold(f).Decision!.Winner);
     }
 }

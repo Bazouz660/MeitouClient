@@ -284,6 +284,7 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
 
     public void RegisterSources(DecisionSystem decisions)
     {
+        decisions.RegisterJob(TaskType._SLAVE_OBEDIENCE, obedient);
         decisions.Register(new RaceGoals(this, TaskPriority.Urgent));
         decisions.Register(new RaceGoals(this, TaskPriority.NonUrgent));
     }
@@ -1074,10 +1075,8 @@ public sealed partial class CaptiveSystem(PopulationData data, CombatSystem? com
         bool owned = cc.SlaveOwner >= 0 && (cc.SlaveMaster < 0 || world.Squads.Find(cc.SlaveMaster) is not null);
         if (owned) FixtureRegistry.Enslave(world, cc, cc.SlaveOwner);
         else FixtureRegistry.Enslave(world, cc, wc.Faction, wc.SquadId);
-        // Then its orders object is reset: the one-shot orders and the perma-jobs are destroyed (FUN_140507530, FUN_140507280); job 187 is implicit (AiSystem.ObeyedRoles).
-        cc.Jobs.Clear();
-        cc.OrderQueue.Clear();
-        if (cc.OrderMove && table.Next[c].Task == (byte)CharacterTask.GoTo) TaskStart.Stand(table, c);
+        // Then its orders object is reset: the one-shot orders and the perma-jobs are destroyed (FUN_140507530, FUN_140507280) and job 187 is added toward the owner (a player character's list; the AI's slaves run it as AiSystem.ObeyedRoles).
+        ObedientSlave.Reset(world, cc);
     }
 
     /// <summary>The record types a new slave is stripped of, in the original's order.</summary>

@@ -850,8 +850,11 @@ public sealed partial class FixtureRegistry
     /// <paramref name="master"/>: the squad it obeys (<see cref="CharacterCold.SlaveMaster"/>), -1 to keep the one it has.
     public static void Enslave(World world, CharacterCold c, int owner, int master = -1)
     {
-        SetSlave(world, c, 1, owner);
+        bool handed = master >= 0 && c.SlaveState == 1 && c.SlaveMaster != master;
         if (master >= 0) c.SlaveMaster = master;
+        SetSlave(world, c, 1, owner);
+        // Handed to another master (engine choice: the original resets and re-adds job 187 where it chains or processes, FUN_14032e590, FUN_14035aa20): its job names the new one.
+        if (handed) Kidnap.ObedientSlave.Reset(world, c);
     }
 
     /// <summary>Clears a character's slave state and owner (state 0) without DA 53's "Free!" (a slave bought free, <c>FUN_1406add20</c>).</summary>
@@ -880,11 +883,14 @@ public sealed partial class FixtureRegistry
     /// </summary>
     static void SetSlave(World world, CharacterCold c, byte state, int owner)
     {
+        byte before = c.SlaveState;
         if (c.SlaveState == 0 && state == 1 && (c.IsPlayer || world.Player.Faction >= 0 && c.Faction == world.Player.Faction)) world.Post(Loc.Tr("{1} has been enslaved", c.Name));
         if (state == 2) c.RecentlyWanted = Crime.CrimeSystem.RecentlyWantedSeconds;
         c.SlaveState = state;
         c.SlaveOwner = state == 0 ? -1 : owner;
         if (state == 0) c.SlaveMaster = -1;
+        // The state setter then fixes the orders object of one that changed (FUN_14032e0d0): a slave gets job 187 Obedient Slave, one that stops being a slave loses it.
+        if (before != state) Kidnap.ObedientSlave.StateChanged(world, c, state);
     }
 
     static void Clear(CharacterCold c)

@@ -648,13 +648,41 @@ Meitou: [simulation, captives](../simulation.md#captives).
   (slot 2 `FUN_1409fb020`: index `FUN_1409b3b40(0, n - 1)`); the town test is the one in the table above. Acting out is 87 (real: needs the machine's inputs and output room, power, a free operator slot) or
   221 (pretend); both `Task_OperateMachine` ([sitting and the held tool](ai-tasks.md#town-goals), [production](buildings-production.md#production)). Meitou's NPC towns have no running machines, so both are
   the same standing at the building at its functionality's clip (`stonemine` by default): **engine choice**, the building's `use range` is not read (30 units).
-- **Obedient Slave** (187, flags 0x75, no lists; **Observed**, `FUN_14050e5b0`): a job whose type is 0xbb is not scored like the others. For a character in slave state 1 that is not
-  sneaking (`Character::isStealthMode` `FUN_1405c9750`) and whose owner handle (`+0x328` of the slave's AI owner object) names a character (type 1) or a squad (0x5b), the job loads the owner platoon's
-  Slave role list (role 4, tiers mask 0xe: `FUN_14026b790`) into the slave's own goal list (`+0x178`) and scores that with the normal scorer `FUN_14050df10`. So a slave runs its owner's
-  `Slave AI Goals`. Meitou: a member of its owner's squad in the Slave role does ([ai](ai.md#goal-loading)); a slave in another squad takes the Slave list of the squad it obeys
-  (`CharacterCold.SlaveMaster`: the owner squad of the squad factory's slaves, the slaver who bought or processed it, the arresting guard's squad, the receiver of a delivery;
-  runtime only, so a loaded slave obeys nobody until enslaved again). A faction owner with no squad, and player-faction slaves (the player drives them), are not modelled.
-  The status tooltip tells the player: "Your character will have a permanent job assigned called [Obedient slave]. While this is active he will automatically work for his master."
+- **Obedient Slave** (187, flags 0x75, TaskData kind +4 = 1 and +8 = 0 like a plain job, no lists, no desire or finder of its own, task class `Task_Blank`). Meitou:
+  [simulation, captives](../simulation.md#captives). A **perma-job** (it sits in the character's job list, `+0x88`), not a goal, whoever the character is.
+  - **Added and removed** (**Verified**, `FUN_1405a4940` slave state setter -> `FUN_14032e0d0`): when the slave state *changes* (the setter does nothing for the same state), a change **to 1**
+    destroys the one-shot orders and the perma-jobs (`FUN_140507530`, `FUN_140507280`) and adds job 187 toward the character's owner handle (character `+0x328`, `FUN_1405086d0` with the
+    permanent flag, which turns the jobs switch on); a change **to 0 or 2** removes the first job of type 187 and stops, or, when the list holds none, destroys the orders and perma-jobs.
+    So freeing, an escape (state 2) or bail ends the obedience at once. `Character::setChainedMode` (`FUN_14032e590`, which sets state 1 first, writes the owner handle from its target and the owner's
+    faction, resets the orders object, adds the job and then puts the shackles on, **Verified**) and processing (182, `FUN_14035aa20`) do the same reset themselves, whatever the old state. The job is
+    saved with the list (`pjob<i>` 187, `pjobT<i>` the owner handle).
+  - **Scored** (**Verified**, `FUN_14050e5b0`, both job passes, the urgent one at step 3 and the full one at step 5; the jobs switch gates it like any job, the list of ignoring types does not hold 187):
+    for a character in slave state 1 (`FUN_1405c8aa0`) that is **not sneaking** (`Character::isStealthMode` `FUN_1405c9750`) and whose owner handle (`+0x328`) names a character (type 1) or a squad (0x5b)
+    that resolves to a platoon, the entry is not a candidate itself: the owner platoon's **Slave role list** (role 4, priorities 1 to 3: mask 0xe, `FUN_14026b790`) is loaded into the slave's own goal
+    list (`+0x178`) and scored with the normal scorer `FUN_14050df10` (desire x finder x weight x crowd, hour window; a goal that plans runs) into the same candidate map. Their keys are the
+    goals' scores (typically 0 to 2), below the first jobs' keys (N + 8, N + 7, ...). **So at step 3 the owner's Slave goals beat the character's own priority-3 goals (Self preservation, Getting food, 15 Protect allies)
+    and every job but the kind-2 ones**; a slave whose list plans something never reaches them. With the gate failing (not state 1, or sneaking) the entry is scored as a plain job, whose
+    desire is a default function (`LAB_1400215ee`, **Unknown**) on a blank task: nothing is read as running. If the list plans nothing, the step goes on as for any character.
+  - **What the Slave lists hold** (**Verified**, the resolved Slave lists of the AI_PACKAGE records of the merged base game, Dialogue and rebirth through `AiDatabase`, 64 entries before inheritance): 171 Following master (in 35 packages,
+    priority 2), 172 Getting in my cage (23, priority 2), 41 Attack enemies of my slavemaster and 143 Protect own squad (5 and 4, priority 3), 35 Running away (the police and prison packages),
+    14 Idleness (the cage wardens at weights 0.05 to 0.11), and the slave camps' workers: package "slave worker day guard" 171 at 0.1, 189 Worker 5-22 at weight 2, 190 Worker (pretend) 5-22 at 1.5, 172 at
+    night (22-5) at 0.5, 14 at 0.05; "Shop" and "Shop catun" 190. Read so (**Observed**): a slave owned by a squad running that package works the town's mines by day and goes to its cage at night.
+  - **The plan** (**Verified** for the targets): 171 is `Task_FollowLeader` (the same class as 141), which follows the slave **owner** if the character has one, else its squad leader
+    ([pathfinding](pathfinding.md#following)); it copies the leader's sneaking every update, so **a slave following a master who is not sneaking cannot sneak**, and escapes by sneaking only while it stands or works.
+    189 / 190 are the worker rows ([above](#slave-work-shout-and-capture)): the finder asks the **blackboard's current town** (`+0x88`) of the slave's own platoon, which the AI's rule writes from the
+    platoon's leader (`FUN_1402688d0`, [AI](ai.md#package-classes)); a character whose side differs from the town's works only in slave state 1. 172 is the slave's own walk into a free cage of its
+    owner's faction (finder `FUN_1408caaf0`). Whether the player platoon's blackboard town is kept up by that rule like an NPC platoon's is **Unknown** (read so).
+  - **Other readers of "has job 187"** (`FUN_140597380`): 15 Protect allies' desire `FUN_140599b90` is **0** for a slave in state 1 holding it (**Verified**, sneaking or not); the sense relation
+    tests `FUN_1408569a0` (for a slave with the job whose owner resolves, true when the owner's vfunc `0x3f0` holds on the other character, read as "counts its owner's enemies") and `FUN_140852700` (job held and no orders: a looker's filter in the sense tests
+    `FUN_140852750` / `FUN_140855a80`) are **Observed**, meaning **Unknown**; `chooseBestAttackTarget` (`FUN_14059e300`) reads it on a candidate: a state-1 slave owned by the chooser's faction (`FUN_14032e2a0`) that holds it takes another branch of the score (**Observed**, effect **Unknown**).
+  - The status tooltip tells the player: "Your character will have a permanent job assigned called [Obedient slave]. While this is active he will automatically work for his master."
+  - **Meitou**: the AI's slaves (a slave member of its owner's squad in the Slave role; one in another squad takes the Slave list of the squad it obeys, `CharacterCold.SlaveMaster`: the owner squad of
+    the squad factory's slaves, the slaver who bought or processed it, the arresting guard's squad, the receiver of a delivery) run it through the AI ([ai](ai.md#goal-loading)). A **player character** gets the job in
+    its list (`ObedientSlave`, step 3 of the decision step): the gate as above; the best goal of the master squad's Slave list in its hour by desire x weight (x1.25 the one running, a tie to the
+    later-listed) among **171** (the owner, else the master squad's leader), **189 / 190** (a random mine, research bench, refinery or crafting bench of the town the slave's squad leader stands in,
+    walked to and stood at at its work clip, the AI's engine choice; no machine runs and the hunger rate is not taken) and **14**. Not acted out for a player character (**gap**): 172 (night cage), 41, 143 and 35
+    (the slave does not fight or flee, as the original's step 3 already comes before its own Self preservation). A faction owner with no squad has no master: the job is held but nothing runs. The job names the master squad's leader (the original's handle names a character or a squad). `SlaveMaster` is
+    runtime only: after a load the owner is found again from the job's saved handle when it names a character.
 - **Shout** (188, `Task_TalktoPlayer`, slots 1 and 2 `FUN_14034c5a0` / `FUN_14034c7c0`): the event is the row's (TaskData `+0x130`: **Verified** 0x26 for 188, 0x27 for 194 and 218, 9 for 158 and 283).
   Start fires it at the target (`FUN_140684990`); each update walks to the target (vfunc `0x3b0`), repeats event 9, gives up after 25 minutes with event 60, and ends when the dialogue is free.
   The slavers' event-38 lines ("shout at slave worker": chance temporary 10, six lines) are in "slaver guard MAIN" and "Holy Nation Paladin". Meitou paces it: a worker shouts at most every 60 to 180 game seconds.
@@ -749,8 +777,10 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   1. The front of the order queue (+0x40 deque, count +0x60): first popped when done (list A holds) or its desire x finder is 0 or less; then planned with the search flag
      ([planner](#planner)). A player character's order that fails to plan shows its failure text (vfunc 0x2d8) and stays queued (**Observed**); the chooser goes on.
   2. Committed mode (the update's argument while a committing current goal's commitment runs; off without a current goal) with the running goal's priority (+0x20c) above 2: stop, the goal keeps its plan.
-  3. The entries of a second list (+0x70, emptied with the queue by `FUN_1405074a0`; what fills it **Unknown**) become candidates; with a job list, the **urgent job pass** adds
-     Obedient Slave 187 (slave state 1, not sneaking) and the kind-2 jobs (turret guard 234) while the AI's sensed-enemy count +0xbc is non-zero, and picks.
+  3. The entries of a second list (+0x70, the one-shot order list, emptied with the queue by `FUN_1405074a0`) become candidates, scored by `FUN_14050df10`. **What fills it** (**Verified**, the writers of the add
+     function `FUN_1405086d0`): the entries that are not perma-jobs, i.e. added without the permanent flag or whose TaskData row has kind +4 = 0, from the order giver `FUN_1405c8da0` (Character-side order
+     calls, which first clear the queue and this list unless the order is queued) and the save loaders `FUN_140508e10` / `FUN_1405092d0`; job 187 is a perma-job and never in it. With a job list, the **urgent job pass** adds the
+     candidates of Obedient Slave 187 (slave state 1, not sneaking: the owner platoon's Slave goals, [Obedient Slave](#slave-work-shout-and-capture)) and the kind-2 jobs (turret guard 234) while the AI's sensed-enemy count +0xbc is non-zero, and picks.
   4. Priority-3 goals: the squad's (blackboard, `FUN_140269240` / `FUN_14026b790`) and the character's own (+0xa0 + 0x18 x priority), one pick.
   5. Committed with the running priority above 1: stop. Else **every job** in list order, then the implicit jobs ([Perma-jobs](#perma-jobs)).
   6. Priority-2 goals; committed with the running priority above 0: stop; priority-1 goals; the default task (+0x190, at key 1.0); else AI vfunc 0x98. The default task (**Verified**:
@@ -778,7 +808,7 @@ update `FUN_140511130`, `Character::setupAI` `FUN_140621b70`; KenshiLib names **
   The providers a plan adds before these rows were not checked for threat states (**Unknown**).
 - **Meitou**: the player's characters are decided by one step in this order ([decision step](../simulation.md#decision-step)): source 1 the order queue
   ([simulation](../simulation.md#order-queue); one that cannot run stays queued with its text and the step goes on; a turret gunner's 146 ends under a melee threat and is taken up again
-  once it is gone), step 2 has no source (no player goal Meitou runs commits), step 3 the urgent jobs (234 while an enemy is sensed; 187 not modelled for player characters), step 4
+  once it is gone), step 2 has no source (no player goal Meitou runs commits), step 3 the urgent jobs (234 while an enemy is sensed; 187 Obedient Slave of an enslaved player character: its master squad's Slave goals 171, 189 / 190, 14, [Obedient Slave](#slave-work-shout-and-capture)), step 4
   picks among 32 Self preservation, 243 Getting food, a player animal's priority-3 race goals (277-279), 259 Picking up food, Hold's 16 and an engine goal for joining a mate's or an
   ally's defence, step 5 every job in list order through its system's contributor (the switch and the repertoire first), then the implicit jobs, step 6 the priority-2 race goal 233 and
   14 Idleness (a player character's routine: it stands; the default task is never reached, as only ROAM_FAR is modelled). A task that ends leaves its character idle for the step to

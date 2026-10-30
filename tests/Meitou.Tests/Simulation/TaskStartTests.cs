@@ -83,7 +83,7 @@ public class TaskStartTests
         readonly OpenGroundWalkability walk = new(SyntheticTown.Ground);
         readonly ItemFactory items;
 
-        public Rig(bool carrying, bool decide = false)
+        public Rig(bool carrying, bool decide = false, bool slaves = false)
         {
             var db = Database();
             var data = PopulationData.Create(db, []);
@@ -104,6 +104,8 @@ public class TaskStartTests
                 systems.Insert(systems.IndexOf(carry) + 1, new TownDutySystem(data, new PopulationSystem(data), carry));
                 systems.InsertRange(systems.IndexOf(Combat) + 1, [new FeedSystem(items), new RetaliationSystem(Combat)]);
             }
+            // The slaves' Obedient Slave job (187) is the captive system's.
+            if (slaves) systems.Add(new CaptiveSystem(data, Combat));
             World = new SimWorld(new WorldSettings { Seed = 7, PublishSnapshots = false }, walk, systems);
             World.Player.Faction = 1;
             string Site(string record, float x, float z, bool complete)
