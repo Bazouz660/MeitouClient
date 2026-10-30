@@ -152,7 +152,7 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
         }
     }
 
-    internal static string Label(string label) => Regex.Replace(label.Split('(')[0].Trim(), @"\s+0-\d+.*$", "")
+    internal static string Label(string label) => label == "Anti-aliasing" ? "Anti-aliasing/upscaling" : Regex.Replace(label.Split('(')[0].Trim(), @"\s+0-\d+.*$", "")
         .Replace(" x", " multiplier", StringComparison.Ordinal).Replace(": error px", "", StringComparison.Ordinal);
 
     /// <summary>The page a Tab panel slider is on: Display, Advanced, or a Graphics sub-page (<see cref="GraphicsPages"/>).</summary>
@@ -209,11 +209,11 @@ sealed partial class SettingsMenu(PlayerInterface player, SettingsPanel values, 
             : key == WorldFrame.ShaftQualitySlider ? ["Low", "Medium", "High"]
             : key.StartsWith("Water reflection", StringComparison.Ordinal) ? ["Off", "Landscape", "Characters", "Buildings", "Everything"]
             : key == WorldFrame.FilteringSlider ? ["1x", "2x", "4x", "8x", "16x"] : null;
-        string label = key == WorldFrame.UpscalerSliders[0] ? "Anti-aliasing" : key == WorldFrame.ParticleSliders[0] ? "Weather particles"
+        string label = key == WorldFrame.UpscalerSliders[0] ? "Anti-aliasing/upscaling" : key == WorldFrame.ParticleSliders[0] ? "Weather particles"
             : key == WorldFrame.TextureQualitySlider ? "Texture quality" : key == WorldFrame.FilteringSlider ? "Texture filtering" : Label(key);
         string hint = key == MetalPresetSlider
             ? "MetalFX temporal is the default at every tier; spatial rows are explicit alternatives. The preset sets the render scale, so the separate scale slider is disabled."
-            : key == WorldFrame.UpscalerSliders[0] ? "Smooths edges. Active: " + (UpscalerStatus?.Invoke() ?? "unavailable") : SliderHint(slider);
+            : key == WorldFrame.UpscalerSliders[0] ? "Smooths edges and upscales the render. Active: " + (UpscalerStatus?.Invoke() ?? "unavailable") : SliderHint(slider);
         return options is { } items ? new(label, hint, Choice: new(() => items, () => (int)MathF.Round(slider.Get()), i => slider.Set(i)))
             : new(label, hint, Slider: slider);
     }

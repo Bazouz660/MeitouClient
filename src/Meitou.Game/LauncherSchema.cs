@@ -28,7 +28,7 @@ static class LauncherSchema
         Graphics(WorldFrame.TextureQualitySlider, 0, Meitou.Data.Textures.TextureQuality.Maximum, 1, 0) with
             { Name = "Texture quality", Labels = [.. Meitou.Data.Textures.TextureQuality.Labels], Reversed = true },
         Graphics(WorldFrame.FilteringSlider, 0, 4, 1, 4) with { Name = "Texture filtering", Labels = ["1x", "2x", "4x", "8x", "16x"] },
-        Graphics(WorldFrame.UpscalerSliders[0], 0, 5, 1, 3) with { Name = "Anti-aliasing", Labels = ["Off", "FXAA", "SMAA", "TAA", "FSR", "DLSS"] },
+        Graphics(WorldFrame.UpscalerSliders[0], 0, 5, 1, 3) with { Name = "Anti-aliasing/upscaling", Labels = ["Off", "FXAA", "SMAA", "TAA", "FSR", "DLSS"] },
         Graphics(WorldFrame.UpscalerSliders[1], 0.33f, 1, 0.01f, 1) with { Scale = 100, Suffix = " %" },
         Graphics(WorldFrame.UpscalerSliders[2], 0, 1, 0.01f, 0.5f) with { Format = "0.00" },
         // World

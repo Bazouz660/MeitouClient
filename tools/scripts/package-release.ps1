@@ -132,7 +132,7 @@ Start
    - A Steam install of Kenshi is found by itself.
    - Otherwise the console asks for your Kenshi folder (the one with kenshi_x64.exe and the data folder) once and keeps it in
      meitou.local.json next to the exe. You can also edit that file, or set the KENSHI_PATH environment variable.
-3. Tab opens the settings (draw distances, anti-aliasing: FXAA, TAA, FSR or DLSS). F10 lists the keys.
+3. Tab opens the settings (draw distances, anti-aliasing/upscaling: FXAA, TAA, FSR or DLSS). F10 lists the keys.
    DLSS (NVIDIA RTX cards): in the game, pick it on the Tab panel's anti-aliasing slider, with no restart needed (the choice is kept in
    meitou.user.json); in the viewer, start meitou-viewer-dlss.bat (or add --upscaler dlss).
 

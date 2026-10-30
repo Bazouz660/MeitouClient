@@ -243,6 +243,9 @@ msgstr "Resolução do mapa de sombras"
 msgid "Anti-aliasing"
 msgstr "Antisserrilhamento"
 
+msgid "Anti-aliasing/upscaling"
+msgstr "Antisserrilhamento/upscaling"
+
 msgid "Render scale"
 msgstr "Escala de renderização"
 
@@ -855,8 +858,8 @@ msgstr "Névoa atmosférica"
 msgid "Use Meitou's atmospheric haze tuning."
 msgstr "Usa o ajuste de névoa atmosférica do Meitou."
 
-msgid "Use temporal smoothing instead of FXAA."
-msgstr "Usa suavização temporal em vez de FXAA."
+msgid "Use temporal smoothing and upscaling instead of FXAA."
+msgstr "Usa suavização temporal e upscaling em vez de FXAA."
 
 msgid "Shadows"
 msgstr "Sombras"
@@ -1524,8 +1527,8 @@ msgstr "Largar corpos"
 msgid "no {1} build"
 msgstr "sem versão para {1}"
 
-msgid "Smooths edges. Active: {1}"
-msgstr "Suaviza as bordas. Ativo: {1}"
+msgid "Smooths edges and upscales the render. Active: {1}"
+msgstr "Suaviza as bordas e faz upscaling da renderização. Ativo: {1}"
 
 msgid "Meitou's texts not yet translated"
 msgstr "textos do Meitou ainda não traduzidos"

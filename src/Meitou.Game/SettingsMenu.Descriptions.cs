@@ -62,7 +62,7 @@ sealed partial class SettingsMenu
         "Ambient occlusion" => "Add contact shading around nearby surfaces and creases.",
         "Dithering" => "Reduce visible colour bands in smooth gradients.",
         "Haze" => "Use Meitou's atmospheric haze tuning.",
-        "Anti-aliasing" => "Use temporal smoothing instead of FXAA.",
+        "Anti-aliasing" => "Use temporal smoothing and upscaling instead of FXAA.",
         "Shadows" => "Use soft shadows and include distant terrain.",
         "Foliage ranges" => "Set foliage visibility by mesh size rather than layer.",
         "Far impostors" => "Draw distant foliage using baked billboard images.",
