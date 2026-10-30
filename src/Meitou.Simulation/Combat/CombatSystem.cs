@@ -147,6 +147,7 @@ public sealed partial class CombatSystem : ITickSystem, IStateHashed, ITaskOwner
             Array.Resize(ref write, size);
             for (int i = old; i < size; i++) { read[i] = CombatSlot.Fresh(-1); write[i] = CombatSlot.Fresh(-1); }
         }
+        if (inFight.Length < read.Length) inFight = new bool[read.Length];
         var next = table.Next;
         for (int i = 0; i < n; i++)
         {

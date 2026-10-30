@@ -136,7 +136,17 @@ public sealed partial class CombatSystem
         return swim * (attack ? MathF.Min(1.2f, WeaponStats.Lerp(t, 0.8f, 1.2f) * g) : MathF.Min(4f, WeaponStats.Lerp(t, 0.6f, 4f) * g));
     }
 
-    public void Act(World world, Partition part, EffectBuffer effects)
+    /// <summary>
+    /// Each character's fight as its body step left it (<see cref="BeforeAct"/>): what <see cref="Act"/> reads of another character's fight, which that one's own Act may end meanwhile
+    /// (<see cref="EndFight(CharacterTable, int, ref CombatSlot)"/>). Derived each tick, not hashed.
+    /// </summary>
+    bool[] inFight = [];
+
+    /// <summary>
+    /// Step 1 of a fighter's update, the body (bleeding, healing, waking, the arms, getting up, the fight's end on going down), for every character before any of them decides
+    /// (<see cref="Act"/>): the decisions read these of their targets and candidates, so they must not depend on which partition ran first.
+    /// </summary>
+    public void BeforeAct(World world, Partition part)
     {
         var table = world.Characters;
         var prev = table.Previous;
@@ -148,71 +158,95 @@ public sealed partial class CombatSystem
         {
             if (!prev[i].Alive) continue;
             var cold = table.Cold(i)!;
+            Body(world, i, cold, ref write[i], now, dt, ref events);
+            inFight[i] = cold.InCombat;
+        }
+    }
+
+    void Body(World world, int i, CharacterCold cold, ref CombatSlot s, int now, float dt, ref List<MedicalEvent>? events)
+    {
+        if (cold.Fighter is null || cold.Stats is null || cold.Medical is null || cold.Race is null) return;
+        var table = world.Characters;
+        var prev = table.Previous;
+        var next = table.Next;
+        // 1. The body: bleeding, healing, waking.
+        if (Settings.TickMedical)
+        {
+            events ??= [];
+            events.Clear();
+            cold.Medical.Tick(dt, MakeContext(world, i, cold), events);
+        }
+        // The weapon in hand follows the arms (docs/game/combat.md "Arms"): losing one puts the weapon away and the fight goes on with what the arms still allow.
+        if (cold.Fighter.SetArms(cold.Medical.ArmWorks(left: false), cold.Medical.ArmWorks(left: true)))
+        {
+            // The weapon put away ends the block it was held in (FUN_1405cc230 sheathes it on an arm's change); a dodge needs no weapon.
+            if (s.ReactTech >= 0 && !cold.Fighter.CanBlock && !techniques[s.ReactTech].IsDodge) s.ReactTech = -1;
+            if (cold.InCombat && !s.Ranged) cold.DrawnWeapon = MeleeDrawn(cold.Fighter);
+            else if (!cold.InCombat && cold.DrawnWeapon != WeaponKinds.None && cold.DrawnWeapon != HandHold.OfCategory((int)WeaponCategory.Bow).Weapon) cold.DrawnWeapon = MeleeDrawn(cold.Fighter);   // a weapon out on a walk follows the arms too
+        }
+        // A player's character out of a fight keeps its weapon out while it walks or follows on an order; idle or at work it sheathes (Idleness and the jobs need it away).
+        if (cold.IsPlayer && !cold.InCombat && cold.DrawnWeapon != WeaponKinds.None && next[i].Task is not ((byte)CharacterTask.GoTo or (byte)CharacterTask.Follow or (byte)CharacterTask.Attack))
+            cold.DrawnWeapon = WeaponKinds.None;
+        // Waking while sneaking it stays low (posture 1, docs/game/ragdolls.md "Staying low"); otherwise it stands.
+        if (s.Down && !cold.Medical.Incapacitated)
+        {
+            cold.Medical.StayingLow = cold.Medical.WokenLow ?? Orders.Has(cold, CharacterOrders.Sneak);
+            cold.Medical.WokenLow = null;
+        }
+        // A leg down replaces it with the forced crawl (posture 2), which ends standing.
+        if (cold.Medical.Crawling) cold.Medical.StayingLow = false;
+        // Waking: it gets up (Task_GetUp, docs/game/ragdolls.md "Getting up"), less wanted as a target and left alone by a hit while its fight is off. Standing up takes
+        // GetUpSeconds; one staying low or crawling (posture above 0) is held only while its bones blend out of a whole-body ragdoll, else not at all (FUN_140334a20).
+        if (s.Down && !cold.Medical.Incapacitated && GetUpSeconds > 0)
+        {
+            float hold = cold.Medical.StayingLow || cold.Medical.Crawling
+                ? world.SystemOf<Ragdolls.RagdollSystem>()?.WasWhole(table.IdOf(i)) == true ? Ragdolls.RagdollSystem.GetUpBlend : 0
+                : GetUpSeconds;
+            // It neither walks, works nor fights until then (Task_GetUp holds the character).
+            if (hold > 0)
+            {
+                cold.GettingUpUntil = now + (int)MathF.Ceiling(hold / dt);
+                cold.StaggeredUntil = Math.Max(cold.StaggeredUntil, cold.GettingUpUntil);
+            }
+            // The get-up's start puts the Hold point where it wakes (FUN_14033ca10).
+            if (Orders.Has(cold, CharacterOrders.Hold)) cold.HoldPoint = new Vector2(prev[i].Position.X, prev[i].Position.Z);
+        }
+        s.Down = cold.Medical.Incapacitated;
+        if (s.Down)
+        {
+            s.AttackTech = -1;
+            s.NextBlow = 0;
+            s.ReactTech = -1;
+            s.TargetSlot = -1;
+            s.Engaged = false;
+            s.Picked = false;
+            if (cold.InCombat) EndFight(table, i, ref s);
+            return;
+        }
+        if (CharacterFacts.GettingUp(cold, now))
+        {
+            s.AttackTech = -1;
+            s.NextBlow = 0;
+            s.ReactTech = -1;
+        }
+    }
+
+    public void Act(World world, Partition part, EffectBuffer effects)
+    {
+        var table = world.Characters;
+        var prev = table.Previous;
+        var next = table.Next;
+        int now = (int)world.Tick;
+        float dt = world.TickSeconds;
+        for (int i = part.Start; i < part.End; i++)
+        {
+            if (!prev[i].Alive) continue;
+            var cold = table.Cold(i)!;
             if (cold.Fighter is null || cold.Stats is null || cold.Medical is null || cold.Race is null) continue;
             ref var s = ref write[i];
+            // Down or getting up (the body step, BeforeAct): it neither fights nor defends.
+            if (s.Down || CharacterFacts.GettingUp(cold, now)) continue;
             ulong key = Rng.Key(table.IdOf(i));
-
-            // 1. The body: bleeding, healing, waking.
-            if (Settings.TickMedical)
-            {
-                events ??= [];
-                events.Clear();
-                cold.Medical.Tick(dt, MakeContext(world, i, cold), events);
-            }
-            // The weapon in hand follows the arms (docs/game/combat.md "Arms"): losing one puts the weapon away and the fight goes on with what the arms still allow.
-            if (cold.Fighter.SetArms(cold.Medical.ArmWorks(left: false), cold.Medical.ArmWorks(left: true)))
-            {
-                // The weapon put away ends the block it was held in (FUN_1405cc230 sheathes it on an arm's change); a dodge needs no weapon.
-                if (s.ReactTech >= 0 && !cold.Fighter.CanBlock && !techniques[s.ReactTech].IsDodge) s.ReactTech = -1;
-                if (cold.InCombat && !s.Ranged) cold.DrawnWeapon = MeleeDrawn(cold.Fighter);
-                else if (!cold.InCombat && cold.DrawnWeapon != WeaponKinds.None && cold.DrawnWeapon != HandHold.OfCategory((int)WeaponCategory.Bow).Weapon) cold.DrawnWeapon = MeleeDrawn(cold.Fighter);   // a weapon out on a walk follows the arms too
-            }
-            // A player's character out of a fight keeps its weapon out while it walks or follows on an order; idle or at work it sheathes (Idleness and the jobs need it away).
-            if (cold.IsPlayer && !cold.InCombat && cold.DrawnWeapon != WeaponKinds.None && next[i].Task is not ((byte)CharacterTask.GoTo or (byte)CharacterTask.Follow or (byte)CharacterTask.Attack))
-                cold.DrawnWeapon = WeaponKinds.None;
-            // Waking while sneaking it stays low (posture 1, docs/game/ragdolls.md "Staying low"); otherwise it stands.
-            if (s.Down && !cold.Medical.Incapacitated)
-            {
-                cold.Medical.StayingLow = cold.Medical.WokenLow ?? Orders.Has(cold, CharacterOrders.Sneak);
-                cold.Medical.WokenLow = null;
-            }
-            // A leg down replaces it with the forced crawl (posture 2), which ends standing.
-            if (cold.Medical.Crawling) cold.Medical.StayingLow = false;
-            // Waking: it gets up (Task_GetUp, docs/game/ragdolls.md "Getting up"), less wanted as a target and left alone by a hit while its fight is off. Standing up takes
-            // GetUpSeconds; one staying low or crawling (posture above 0) is held only while its bones blend out of a whole-body ragdoll, else not at all (FUN_140334a20).
-            if (s.Down && !cold.Medical.Incapacitated && GetUpSeconds > 0)
-            {
-                float hold = cold.Medical.StayingLow || cold.Medical.Crawling
-                    ? world.SystemOf<Ragdolls.RagdollSystem>()?.WasWhole(table.IdOf(i)) == true ? Ragdolls.RagdollSystem.GetUpBlend : 0
-                    : GetUpSeconds;
-                // It neither walks, works nor fights until then (Task_GetUp holds the character).
-                if (hold > 0)
-                {
-                    cold.GettingUpUntil = now + (int)MathF.Ceiling(hold / dt);
-                    cold.StaggeredUntil = Math.Max(cold.StaggeredUntil, cold.GettingUpUntil);
-                }
-                // The get-up's start puts the Hold point where it wakes (FUN_14033ca10).
-                if (Orders.Has(cold, CharacterOrders.Hold)) cold.HoldPoint = new Vector2(prev[i].Position.X, prev[i].Position.Z);
-            }
-            s.Down = cold.Medical.Incapacitated;
-            if (s.Down)
-            {
-                s.AttackTech = -1;
-                s.NextBlow = 0;
-                s.ReactTech = -1;
-                s.TargetSlot = -1;
-                s.Engaged = false;
-                s.Picked = false;
-                if (cold.InCombat) EndFight(table, i, ref s);
-                continue;
-            }
-            if (CharacterFacts.GettingUp(cold, now))
-            {
-                s.AttackTech = -1;
-                s.NextBlow = 0;
-                s.ReactTech = -1;
-                continue;
-            }
 
             // 2. Helpless in a hit reaction until its clip ends; every BreakOutSeconds of it the character may break out (the original's +0x124, FUN_1406085e0): a roll of its
             // unarmed dodge chance against the strongest fighter swinging at it at 10 to 99 per cent of the swing; on success the stumble ends in a stumble-dodge row.
@@ -391,7 +425,7 @@ public sealed partial class CombatSystem
         var medical = cold.Medical!;
         float length = fighter.WeaponLength;
         // The gap to where the target will be (a target that is not fighting is led by LeadSeconds, FUN_1402b4570).
-        var aim = prev[t].Position + (tc.InCombat ? Vector3.Zero : prev[t].Velocity * CombatTuning.AimLeadSeconds);
+        var aim = prev[t].Position + (inFight[t] ? Vector3.Zero : prev[t].Velocity * CombatTuning.AimLeadSeconds);
         float e = fighter.EncumbranceFactor;
         var query = new AttackQuery
         {
