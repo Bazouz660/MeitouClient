@@ -1260,11 +1260,15 @@ public sealed partial class AiSystem(PopulationData data, AiSettings? settings =
                 if (cold.Ai is null)
                 {
                     var p = table.Next[s].Position;
-                    cold.Ai = new AiMind
+                    var made = cold.Ai = new AiMind
                     {
                         Squad = squad, MemberIndex = k, Post = OccupierPost(world, board, k) ?? new Vector2(p.X, p.Z), RaceGoals = cold.Race is { } race ? data.Ai.RaceGoals(race.StringId) : [], Resume = squad.Resume,
                         Shopping = ShoppingList.Make(data.Db, cold.RecordId, world.Seed, Rng.Key(table.IdOf(s))),
                     };
+                    // Its stance from its lists at once, not only at its first think (the look reads it before then).
+                    var roles = ObeyedRoles(world, squad, cold) ?? board.Roles[(int)RoleOf(squad, squad.Members[k], cold)];
+                    made.Stance = StanceOf(made, roles, world.Hour);
+                    (made.StanceFrom, made.StanceHour) = (roles, world.Hour);
                 }
                 if (cold.Ai.Goal is { } g)
                 {
