@@ -189,6 +189,12 @@ public sealed unsafe class InteriorMaskRenderer : IDisposable
     public uint Index => _bindless?.Index ?? 0;
 
     /// <summary>
+    /// The drawn target with its nearest sampler and size, for a program that binds it directly (the particles); null while no mask was drawn.
+    /// </summary>
+    internal (SampledTexture Texture, int Width, int Height)? Sampled =>
+        Active && _target is { } target ? (new SampledTexture(Nearest(), target.View()), target.Desc.Width, target.Desc.Height) : null;
+
+    /// <summary>
     /// The drawn buildings' mask meshes' X/Z bounds: terrain patches outside all of them need no cut.
     /// </summary>
     public IReadOnlyList<(Vector2 Min, Vector2 Max)> Boxes => _boxes;

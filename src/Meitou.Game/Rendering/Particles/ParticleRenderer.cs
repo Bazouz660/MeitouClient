@@ -160,12 +160,21 @@ public sealed unsafe class ParticleRenderer : IDisposable
         out vec4 fragColour;
         uniform sampler2D uTexture;
         uniform sampler2D uSoftDepth;               // the scene's depth at this target's size (the Meitou fog switch), as a colour
+        uniform sampler2D uInteriorMask;            // the interior mask (InteriorMaskRenderer): nearest and farthest mask face's view depth in r and a
+        uniform vec4 uInterior;                     // x 1: the material clips (the game's CLIP_INTERIOR); y, z: mask texels per target pixel
         uniform vec4 uSoft;                         // x: 0 hard (the game's), 1 fade the alpha, 2 the colour and alpha (additive), 3 towards white (modulate); y, z: the scene depth's near, far; w unused
         uniform float uCoverageMax, uCoverageGain;
         uniform int uCoverage;                      // 0: colour; 1: the particle's alpha, 2: its brightest channel (the upscalers' reactive mask); 3 / 4: the low-resolution target's premultiplied alpha / additive
         """ + DepthConvention.Glsl + """
         void main()
         {
+            // basic.hlsl CLIP_INTERIOR: a clipped material (rain, dust, ash, steam) leaves out what lies inside an open building's mask, as the terrain
+            // and the grass do (docs/render-interior-cut.md): the sprite's view depth between the mask's nearest and farthest face at its pixel.
+            if (uInterior.x > 0.5)
+            {
+                vec4 interiorRange = texelFetch(uInteriorMask, min(ivec2(gl_FragCoord.xy * uInterior.yz), textureSize(uInteriorMask, 0) - 1), 0);
+                if (vDepth < interiorRange.a && vDepth > interiorRange.r) discard;
+            }
             // basic.hlsl: texture * colour * vertex colour. A recoloured burst (negative vertex rgb, Burst's recolour) takes that colour instead of the texture's hue, keeping its brightness.
             vec4 t = texture(uTexture, vUv);
             if (min(vColour.r, min(vColour.g, vColour.b)) < 0.0) t.rgb = vec3(max(t.r, max(t.g, t.b)));
@@ -271,7 +280,23 @@ public sealed unsafe class ParticleRenderer : IDisposable
     /// <summary>
     /// The program's texture and soft-depth samplers.
     /// </summary>
-    readonly SamplerSlot _textureSlot, _softDepthSlot;
+    readonly SamplerSlot _textureSlot, _softDepthSlot, _interiorSlot;
+
+    /// <summary>
+    /// The clip of the game's clipped materials (<see cref="ParticleMaterial.ClipInterior"/>).
+    /// </summary>
+    readonly UniformHandle _interior;
+
+    /// <summary>
+    /// The frame's interior mask (<see cref="Objects.InteriorMaskRenderer.Sampled"/>), null without one: the clipped materials leave out what lies
+    /// inside it. Set before <see cref="Record"/>.
+    /// </summary>
+    public (SampledTexture Texture, int Width, int Height)? InteriorMask { get; set; }
+
+    /// <summary>
+    /// The mask's texels per pixel of the target being drawn (<see cref="Record"/>, <see cref="DrawCoverage"/>).
+    /// </summary>
+    System.Numerics.Vector2 _interiorScale = System.Numerics.Vector2.One;
     /// <summary>
     /// The 1 × 1 white stand-in for a missing texture.
     /// </summary>
@@ -497,6 +522,8 @@ public sealed unsafe class ParticleRenderer : IDisposable
         _coverageGain = _program.Uniform("uCoverageGain");
         _textureSlot = _program.Sampler("uTexture");
         _softDepthSlot = _program.Sampler("uSoftDepth");
+        _interiorSlot = _program.Sampler("uInteriorMask");
+        _interior = _program.Uniform("uInterior");
         _soft = _program.Uniform("uSoft");
         (_litVertex, _litFragment, _particleEye) = (_program.Uniform("uLitVertex"), _program.Uniform("uLitFragment"),
             _program.Uniform("uParticleEye"));
@@ -894,6 +921,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         bool low = divisor > 1;
         var cmd = _gpu.BeginGuest(low ? "particles low" : "particles");
         var targets = _gpu.CurrentTargets();
+        _interiorScale = InteriorScale(targets.Width, targets.Height);
         bool hasDepth = targets.Formats.Depth != InternalFormat.None, hasColour = targets.Formats.Colour != InternalFormat.None;
         var baseState = _gpu.CurrentState();
         cmd.SetViewport(targets.Viewport);
@@ -1137,6 +1165,7 @@ public sealed unsafe class ParticleRenderer : IDisposable
         if (!HasCoverage || FullCount == 0) return;
         var cmd = _gpu.BeginGuest("particle coverage");
         var targets = _gpu.CurrentTargets();
+        _interiorScale = InteriorScale(targets.Width, targets.Height);
         var baseState = _gpu.CurrentState();
         cmd.SetViewport(targets.Viewport);
         cmd.SetScissor(targets.Scissor);
@@ -1295,6 +1324,14 @@ public sealed unsafe class ParticleRenderer : IDisposable
     }
 
     /// <summary>
+    /// The mask's texels per pixel of a target <paramref name="width"/> x <paramref name="height"/> (a low-resolution or after-upscale target is not
+    /// the render size the mask is drawn at).
+    /// </summary>
+    System.Numerics.Vector2 InteriorScale(int width, int height) => InteriorMask is { } mask && width > 0 && height > 0
+        ? new System.Numerics.Vector2((float)mask.Width / width, (float)mask.Height / height)
+        : System.Numerics.Vector2.One;
+
+    /// <summary>
     /// The soft fade against the scene's depth and the Meitou sun lighting of a material's sprites.
     /// </summary>
     void SetSoftAndLight(ParticleMaterial m, int coverage, SoftDepth? softDepth)
@@ -1316,6 +1353,9 @@ public sealed unsafe class ParticleRenderer : IDisposable
             m.Blend == ParticleBlend.Alpha ? 0 : m.Blend == ParticleBlend.Add ? 1 : 2, 0);
         _program.Set(_particleEye, _frameEye);
         _program.Bind(_softDepthSlot, softDepth is { } bound ? bound.Texture : _white.Sampled());
+        bool clip = m.ClipInterior && InteriorMask is not null;
+        _program.Set(_interior, clip ? 1 : 0, _interiorScale.X, _interiorScale.Y, 0);
+        _program.Bind(_interiorSlot, clip ? InteriorMask!.Value.Texture : _white.Sampled());
     }
 
     /// <summary>

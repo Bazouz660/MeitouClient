@@ -1,7 +1,7 @@
 # Interior cut
 
 What lies inside a building's interior mask is not drawn, so a room dug into a hillside shows its floor and no grass
-grows through a bar's floorboards. `InteriorMaskRenderer`; consumers: terrain, foliage, map features.
+grows through a bar's floorboards. `InteriorMaskRenderer`; consumers: terrain, foliage, map features, the clipped particles.
 
 ## Original
 
@@ -42,6 +42,13 @@ grows through a bar's floorboards. `InteriorMaskRenderer`; consumers: terrain, f
   - foliage meshes: the full colour and prepass programs (already discarding) cut while the view has it on; the GPU cull
     gives a fully visible instance over a box the fade 1.5 (drawn whole), which lays it out with the dithered ones;
   - grass: always cut in the main near view (its cut-out already discards);
+  - particles of the game's clipped materials (`ParticleMaterial.ClipInterior`: a texture unit of `content_type compositor
+    rt_interiormask`, basic.hlsl `CLIP_INTERIOR`; **Verified** installed materials: rain, dust, ash, steam, wisps, 50 of 94):
+    the same test in the particle program at every target size (the mask's texels per target pixel), with the sprite's view
+    depth. The camera rain's cube is centred ahead of the camera ([weather](formats/weather.md)), so the drops between the
+    camera and an open building still show over its interior, as in the game; **Observed** (save black-desert-city, a
+    Metal Wallhouse held open in the rain): the drops over its room lay in front of the mask (depth ~105 units against a
+    nearest face at ~190).
   - TERRAIN-mode features and rocks (the terrain's mesh path): placements over a box are drawn with the meshes' full
     colour program with `TerrainConstants.interiorCut` on (features and CPU-culled rocks in their own list; GPU-culled
     rocks get the fade 1.5 too and are drawn by the fading draw).

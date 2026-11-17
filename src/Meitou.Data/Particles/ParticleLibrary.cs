@@ -39,10 +39,13 @@ public enum ParticleBlend
 /// What a particle needs of an Ogre <c>.material</c> from <c>data/particles/materials</c> (docs/formats/particle-universe.md): the texture, the
 /// blend, the depth flags and the shading the vertex and fragment programs give. The shipped particle shaders (basic.hlsl) output <c>texture · colour
 /// · vertexColour</c>; the "Ambient" vertex programs scale the particle colour by <c>clamp(5 sunY + 0.2, 0.1, 1)</c>; there is no fog term (Verified
-/// in the shader source). The interior-mask clip is not reproduced.
+/// in the shader source). <paramref name="ClipInterior"/>: the pass has a texture unit of <c>content_type compositor rt_interiormask</c>, whose
+/// program (<c>Basic_Texture_Clipped_FP</c>, basic.hlsl <c>CLIP_INTERIOR</c>) leaves out a fragment inside an open building's interior mask
+/// (Verified in the installed materials: the rain, dust, ash, steam and wisp materials, 50 of 94).
 /// </summary>
 public sealed record ParticleMaterial(
-    string Name, string? Texture, ParticleBlend Blend, bool DepthCheck, bool DepthWrite, bool Ambient, Vector4 ColourScale, bool Clamp)
+    string Name, string? Texture, ParticleBlend Blend, bool DepthCheck, bool DepthWrite, bool Ambient, Vector4 ColourScale, bool Clamp,
+    bool ClipInterior = false)
 {
     /// <summary>
     /// The particle view of <paramref name="m"/>'s first pass: the blend its <c>scene_blend</c> factors name, the first texture unit with a texture
@@ -70,8 +73,9 @@ public sealed record ParticleMaterial(
                     && float.TryParse(p.Args[5], System.Globalization.CultureInfo.InvariantCulture, out float a))
                     colour = new Vector4(r, g, b, a);
         bool clamp = unit?.AddressMode is not { Count: > 0 } mode || mode[0] != "wrap";
+        bool clipInterior = pass.TextureUnits.Any(u => u.ContentType is ["compositor", "rt_interiormask", ..]);
         return new ParticleMaterial(m.Name, unit?.Texture, kind, pass.DepthCheck, pass.DepthWrite,
-            pass.VertexProgram?.Name.Contains("Ambient", StringComparison.Ordinal) == true, colour, clamp);
+            pass.VertexProgram?.Name.Contains("Ambient", StringComparison.Ordinal) == true, colour, clamp, clipInterior);
     }
 }
 
