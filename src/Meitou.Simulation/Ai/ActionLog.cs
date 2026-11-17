@@ -78,6 +78,12 @@ public sealed class ActionLog
     public TextWriter? Writer { get; set; }
 
     /// <summary>
+    /// A boundary's lines, written to <see cref="Writer"/> in one piece: the host's file flushes every write, and a line at a time was a disk write
+    /// each on the simulation's thread (a city in a fight: about an eighth of a core).
+    /// </summary>
+    readonly StringWriter _lines = new(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
     /// Which characters are followed (<see cref="ActionLogScope.Off"/> by default).
     /// </summary>
     public ActionLogScope Scope
@@ -101,6 +107,7 @@ public sealed class ActionLog
         }
 
         Follow(world);
+        _lines.GetStringBuilder().Clear();
         var table = world.Characters;
         var state = table.Previous;   // the tick boundary: the state just computed
         bool wrote = false;
@@ -115,12 +122,14 @@ public sealed class ActionLog
 
             if (Remember(slot, state[slot], cold.Running) is not { } change) continue;
             var now = (CharacterTask)state[slot].Task;
-            WriteChange(writer, world, slot, cold, change with { Ended = cold.EndedTick > _boundary }, now);
+            WriteChange(_lines, world, slot, cold, change with { Ended = cold.EndedTick > _boundary }, now);
             wrote = true;
         }
 
         _boundary = table.Ticks;
-        if (wrote) writer.Flush();
+        if (!wrote) return;
+        writer.Write(_lines.ToString());
+        writer.Flush();
     }
 
     /// <summary>
