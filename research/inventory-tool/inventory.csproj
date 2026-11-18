@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- The compiler that ships with the SDK in use; pass -p:RoslynDir=... to point elsewhere. -->
+    <RoslynDir Condition="'$(RoslynDir)' == ''">$(MSBuildToolsPath)/Roslyn/bincore</RoslynDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.CodeAnalysis" HintPath="$(RoslynDir)/Microsoft.CodeAnalysis.dll" />
+    <Reference Include="Microsoft.CodeAnalysis.CSharp" HintPath="$(RoslynDir)/Microsoft.CodeAnalysis.CSharp.dll" />
+  </ItemGroup>
+</Project>
