@@ -56,6 +56,7 @@ visual fixes. Code mods' settings pages keep their values in the player's `meito
 | `time` | `mode` (local, vote, host, fixed), `voteSeconds`, `pauseAllowed`, `maxPauseSeconds`, `pauseWhenEmpty` ([03](03-commands-and-authority.md#time-speed-pause-and-votes)) |
 | `players` | `maxSquads`, `maxSquadSize`, `maxCharacters`, starts allowed, `allowImport` (bring a single-player squad), `allowInPlayEditor`, `newFactionPerPlayer` |
 | `pvp` | `mode` (off, consensual, on), `friendlyFire`, alliance notice period |
+| `trade` | `players`, `characters`, `money`, `remoteMoney`, `betweenFactions` ([03](03-commands-and-authority.md#trade-between-players)) |
 | `offline` | `logoutDelay`, `dangerDelayMax`, `captives`, `baseProtection`, `baseProduction`, `healing` (below) |
 | `view` | `leash`, `maxGroups`, preset ([05](05-areas.md#what-is-loaded)) |
 | `simulation` | threads, far period, near radius, navmesh zone limit, load-shedding thresholds |

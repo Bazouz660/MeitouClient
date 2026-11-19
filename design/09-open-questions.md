@@ -3,7 +3,21 @@
 Each has a recommendation, so work can start without an answer; an answer different from the recommendation costs what the last column
 says. Most important first. Facts are from upstream `a1ef2e06f`.
 
-## Decisions that shape the plan
+## Decided by the owner (19 November 2026)
+
+| # | Decision |
+|---|---|
+| Q1 | Built in the main repository. The owner is a core maintainer of it; the packages go upstream as ordinary pull requests. |
+| Q2 | Milestone 1 ends with separate player factions (package 29, then the hardening of 30). The point after package 24 stays as a checkpoint to test with friends, not a release. |
+| Q3 | Both camera modes: free in single-player and on Friends servers, leashed on Community and Large, as recommended. (His answer was "both"; this is how it was read.) |
+| Q4 | The offline defaults as recommended. |
+| Q5 | One purse per player. |
+| Q6 | The speed vote rule as recommended. |
+| Q7 | Accepted: a dedicated server needs a Kenshi install and starts as the game executable with `--server`. |
+| Q8 | LiteNetLib, behind our own `ITransport`. |
+| New | Players can trade with each other: items, cats and characters ([03](03-commands-and-authority.md#trade-between-players); package 19a of [08](08-milestones.md)). |
+
+## Decisions that shape the plan (Q1 to Q8 are decided above; kept here for their reasons)
 
 | # | Question | Recommendation | Why | If you decide otherwise |
 |---|---|---|---|---|
@@ -29,6 +43,9 @@ says. Most important first. Facts are from upstream `a1ef2e06f`.
 | Q15 | **Old code mods on a server.** A mod without `side` counts as `both`: server and every client must have it. Client-only mods: allowed on Friends, listed on Community and Large. | Accept. | Treating old mods as `server` would hide them from clients and break those with UI. |
 | Q16 | **Friendly fire between non-hostile player factions.** | Off by default (blows do no damage); `turnsHostile` for servers that want it. Blows between player factions never move relations by themselves; diplomacy is explicit. | On: an accident in a shared fight starts a war. |
 | Q17 | **Stealth against other players.** Kenshi shows every loaded character. | Milestone 1 shows everyone, as the original. Hiding unseen sneakers from enemy players is a later PvP rule. | Now: a per-viewer visibility test in replication and a decision about what "seen" means for a player's whole squad. |
+| Q19 | **Trading characters on a public server.** | On for Friends; off by default on Community and Large (`trade.characters`). | On everywhere: trained characters get sold, which a public server may or may not want. |
+| Q20 | **How far apart may two players trade?** | Within talk reach to open, offers from within 300 units; a money gift needs the same reach unless `trade.remoteMoney` is on. | At any distance: simpler to use, but items and characters cross the map in a tick. |
+| Q21 | **May a player trade away their last character?** | No. | Yes: the player then has no character and must make a new start. |
 | Q18 | **Players' machines simulating areas.** | Not designed here, as you decided. The area boundary of [05](05-areas.md) would allow a client as a simulator later; it adds the question of trusting its results. | - |
 
 ## Things only you can find out

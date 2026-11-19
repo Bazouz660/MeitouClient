@@ -88,11 +88,49 @@ Per connection: a token bucket (default 60 commands a second, burst 120) and a s
 |---|---|---|
 | Open trade | one `_customer`, `_trader`, `_session`, `_view` (`Sim/Trading/TradeSystem.cs:291-307`) | one session per player. Two players may trade with the same shop at once: every buy and sell is applied serially at a tick and checked against the stock as it is then; the loser of a race gets the existing "no longer there" refusal. Buy-back receipts match their own session (:1806) |
 | Conversation | one `_open` (`Sim/Dialogue/DialogueSystem.cs:192`) | one per player. An NPC in a conversation is busy: a second talker waits at talk range and gets "busy" |
-| Player-to-player trade | none | `CharacterTrading` (`Sim/Dialogue/CharacterTrading.cs`: `ConfirmCharacterTrade`) is the base: both sides place items and money, both confirm, the swap is one tick. Giving by drag onto another player's character asks that player |
+| Trade between players | none | a `PlayerTrade` session per pair of players: items, cats and characters, both confirm, the swap is one tick ([below](#trade-between-players)). Giving by drag onto another player's character asks that player |
 | Open container, loot, door target and their walkers | one each in `PlayerState` :200-247 | they sit in `PlayerState`, which becomes per player |
 | Held item (on the mouse) | one, hashed (`PlayerState.cs:253`) | per player. On disconnect it returns to where it came from (`World.ReturnHeldItem`, `World.Interface.cs:122`) |
 | Two players at one container | impossible | both may open it; moves are serial; a move whose source cell changed is refused and the client's view corrects on the next update |
 | `World.CloseInventories` (alarm, caught stealing) | closes all | closes the sessions of the player concerned |
+
+### Trade between players {#trade-between-players}
+
+Decided by the owner on 19 November 2026: players must be able to trade with each other, and a trade carries items, cats (money) and
+characters.
+
+**Fact.** Nothing today moves anything between two players: there is one purse (`Sim/Player/PlayerState.cs:39`) and one player. The
+nearest existing thing is the character trading window for slaves and animals (`Sim/Dialogue/CharacterTrading.cs`, read at `281dfbb6d`):
+a list of characters with prices, confirmed by one side (`ConfirmTrade` :338), which moves the money (:361-362) and hands a character to
+the buyer's side (`BuyFree` :373) or to the slaver (`Sell` :451), within 300 units of the slaver (`SlaveSaleRange` :66). It is one-sided
+and its other party is an NPC, so it is a model for moving a character, not the trade itself. (An earlier version of this file called it
+an item swap; it is not.)
+
+**Proposal.**
+
+| Step | Rule |
+|---|---|
+| Open | A player orders one of their characters to trade with another player's character (a new verb in the context menu, shown on other players' characters). When the two stand within talk reach (`DialogueSystem.TalkReach`, `Sim/Dialogue/DialogueSystem.cs:454`) the other player is asked; on yes a `PlayerTrade` session opens for the pair. A player has one at a time. |
+| Offer | Each side fills its own offer: items from the inventories of its characters within 300 units of its trading character (the reach the character window uses), an amount of cats from its purse, and characters of its own within the same 300 units. Each side sees both offers in its personal view. |
+| Confirm | Each side confirms. Any change to either offer clears both confirmations, so nobody confirms something that then changes. |
+| Swap | When both have confirmed, the whole swap is applied at one tick or none of it. It checks again that every item is still where it was, the cats are there, each character may still be offered, the receiver's bags have room and the receiver's squad and character limits hold (`players.maxSquadSize`, `players.maxCharacters`). A failed check cancels the swap and tells both sides which line failed. |
+| Close | On the swap, on either side cancelling, when a trading character leaves the reach, gets into a fight or goes down, or when a player disconnects. Nothing is held in escrow: until the swap everything stays with its owner. |
+
+A character can be offered when it is its owner's, awake, not in a fight, not carried or carrying, not captive, shackled or jailed, and
+not the owner's last character (a player with no character has nothing to play). A traded character goes to the receiver's active squad
+with everything it wears and carries, loses its orders, and keeps what is its own: skills, bounties, its record. Its squad's owner changes,
+and its faction too when the two players are in different factions (stage C; within one faction only the owner changes). An animal trades
+like any character.
+
+A gift is the same swap with one empty side. `GiveMoney(player, amount)` is the short form for cats: no window, the receiver is told. It
+needs the two players to have characters within talk reach of each other unless the rule `trade.remoteMoney` is on.
+
+Rules of the server (section `trade` in [07](07-settings-mods-saves.md)): `players` (on), `characters` (on), `money` (on), `remoteMoney`
+(off), `betweenFactions` (on; off limits trade to faction mates). A public server can turn `characters` off so that trained characters are
+not sold. Every swap is written to the server's log with both players, for the admin.
+
+Commands, each checked by the gate against the sender's own property: `ProposeTrade`, `AnswerTrade`, `SetTradeOffer`, `ConfirmTrade`,
+`CancelTrade`, `GiveMoney`. The window is a Meitou addition, shown only in multiplayer; the original has none.
 
 ### Latency
 

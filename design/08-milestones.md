@@ -18,6 +18,9 @@ How to read it:
 Three stages. **A** changes no behaviour and ships in single-player one package at a time. **B** adds the network and ends with friends
 playing in one faction. **C** makes player factions separate.
 
+Decided on 19 November 2026: milestone 1 is all three stages. The end of stage B (after package 24) is a checkpoint to test with
+friends, not a release. The packages are built in the main repository as ordinary pull requests.
+
 ## Stage A: single-player on the new seams (no behaviour change)
 
 ### 1. The host owns the clock and the tick (M)
@@ -183,9 +186,23 @@ playing in one faction. **C** makes player factions separate.
 
 ### 19. A joining player's start (M)
 - **Scope:** character creation on the client against a preview, `CreateSquad` checked by the gate, optional import
-  (`Sim/Saving/SaveImport.cs`), player-to-player trade and transfer, the HUD's player list.
+  (`Sim/Saving/SaveImport.cs`), the HUD's player list.
 - **Risks:** the character editor assumes a waiting world (`PlayerState.InCreation`, `Game/Editor/CharacterEditorHost.cs`).
-- **Tests:** a `CreateSquad` beyond the start's limits is refused; a transfer moves a character between owners and both squad lists.
+- **Tests:** a `CreateSquad` beyond the start's limits is refused.
+
+### 19a. Trade between players (M)
+- **Scope:** the `PlayerTrade` session, its six commands and their checks in the gate, the personal view of an open trade, the trade
+  window and the context-menu verb, `GiveMoney`, the `trade` rules, the server's trade log
+  ([03](03-commands-and-authority.md#trade-between-players)). In stage B a traded character changes owner; its change of faction comes
+  with package 28.
+- **Files:** new `Sim/Trading/PlayerTrade.cs`; `Sim/Player/` (purse), `Sim/Factions/SquadManagement.cs` (a character moves between
+  owners), the gate, the personal view, `Game/Ui/` (the window), the context menu.
+- **Keeps:** single-player shows no trade verb and no window; the slave and animal window (`CharacterTrading`) is untouched.
+- **Risks:** a swap applied by half; an item or a character that changes between the last confirmation and the swap; a character traded
+  while an order or a job still names it.
+- **Tests:** a swap moves items, cats and a character both ways at one tick, and nothing when one check fails; changing an offer clears
+  both confirmations; a character in a fight, carried, captive, or a player's last one cannot be offered; a full squad refuses a
+  character; `GiveMoney` out of reach is refused unless `trade.remoteMoney` is on; a disconnect closes the trade with everything in place.
 
 ### 20. Speed votes; menus that do not pause (S)
 - **Scope:** `time.mode` vote, host and fixed; ready speeds on the HUD; menu pause off outside `local`; build and photo mode without
@@ -248,7 +265,8 @@ playing in one faction. **C** makes player factions separate.
 
 ### 28. Runtime factions and diplomacy (L)
 - **Scope:** create a faction at join (`newFactionPerPlayer`), the diplomacy table, declare, propose, accept, the alliance notice,
-  join and leave a faction, roles, PvP rules, save of runtime factions.
+  join and leave a faction, roles, PvP rules, save of runtime factions; a character traded to a player of another faction changes
+  faction (package 19a).
 - **Tests:** the diplomacy table as a state machine; a hostile declaration makes the two factions' characters enemies to
   `AggroSystem.IsEnemy` and peace ends it; joining moves buildings and squads.
 
@@ -277,7 +295,7 @@ per-pair raid managers; incremental saves; local ragdoll playback; several simul
  7 ─ 8                          commands       (independent of 1-6)
  9 ─ 10 ─ 11                    players        (11 needs 7)
  12, 13 ─ 14, 15                views          (13 needs 9; 14 needs 12, 13)
- 16 (needs 7, 13, 14) ─ 17 ─ 18 ─ 19 ─ 20 ─ 21 ─ 22 ─ 23 ─ 24
+ 16 (needs 7, 13, 14) ─ 17 ─ 18 ─ 19 ─ 19a ─ 20 ─ 21 ─ 22 ─ 23 ─ 24
  25 ─ 26 ─ 27 ─ 28 ─ 29 ─ 30    factions       (25-27 can start any time after 11, beside stage B)
 ```
 

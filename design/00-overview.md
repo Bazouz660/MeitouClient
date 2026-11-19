@@ -90,12 +90,12 @@ What it does not give us: any notion of a second player (no id, no sender, one `
 ## The first milestone
 
 **In:** the host without a window; commands with a sender and a gate; time as commands, with speed voting; several players; per-player
-trade, dialogue and inventory; shared and personal views; replication with interest by zone and a byte budget; joining by address, by
+trade, dialogue and inventory; trade between players (items, cats, characters); shared and personal views; replication with interest by zone and a byte budget; joining by address, by
 Steam friend (Windows), and hosting from the game's menu; the server's rules, mod list check and save; offline players; then separate
 player factions with relations, joining a faction, raids and crimes per faction. A whole playthrough for 2 to 8 friends.
 
 **Checkpoint inside it:** after package 24 of [08](08-milestones.md) friends can play together **in one faction**. Separate factions are
-packages 25 to 29.
+packages 25 to 29. Decided on 19 November 2026: milestone 1 is complete only with them; the checkpoint is for testing with friends.
 
 **Not in:** more than one simulator process; players' machines simulating; encryption of traffic (password proof only); downloading
 non-Workshop mods from the server; a server browser; client-side prediction of movement; Linux and macOS joining through Steam (Kenshi

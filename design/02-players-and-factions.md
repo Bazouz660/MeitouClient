@@ -66,8 +66,10 @@ Decisions:
   squads, in your faction or not, are not in them. They are characters in the world like NPCs, shown with their owner's name.
 - Several squads per player work as today (`MaxSquads`, `MaxSquadSize`, `SquadManagement.cs:202,237`). The limits become per player;
   the rule `players.maxCharacters` caps a player's total ([07](07-settings-mods-saves.md)).
-- Faction mates may heal, carry, feed and trade with each other's characters as allies do. They may not order them. A player may hand a
-  character or a squad to a faction mate (`TransferCommand`, the receiver accepts).
+- Faction mates may heal, carry, feed and trade with each other's characters as allies do. They may not order them.
+- A character changes owner through a trade between players, which also carries items and cats; a gift is a trade with one empty
+  side ([03](03-commands-and-authority.md#trade-between-players)). The server's rules say between whom: any two players by default, faction
+  mates only when `trade.betweenFactions` is off.
 - Recruiting (`DialogueSystem.Recruit.cs:54-150`) joins the recruit to the *speaking character's owner's* active squad and faction.
 - An independent squad (`Squad.Independent`, `Squads.cs:185`) and a dormant one (`:223`) keep their owner.
 
