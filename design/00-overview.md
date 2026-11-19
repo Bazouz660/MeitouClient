@@ -56,7 +56,7 @@ Every file marks its statements: **Fact** (read in the code or docs at that comm
 | Personal view | The part that depends on who looks (selection, squads, trade, dialogue, map, research, inspected details). |
 | View anchor | One point per player (their camera focus, leashed to their characters on big servers) that loads a 3 x 3 zone block. |
 | Area | A set of zones simulated by one simulator. Milestone 1 has one area: the world. |
-| Rules | The server's gameplay settings (about 42 values today spread over the client's config). |
+| Rules | The server's gameplay settings (43 values today, spread over the client's config). |
 
 ## What the code already gives us (facts that shaped the design)
 
@@ -84,7 +84,7 @@ What it does not give us: any notion of a second player (no id, no sender, one `
 | Offline characters are kept "as unloaded squads are today" | A new stored form is needed: today's `StoredSquad` exists only for squads the population made; a player squad is never unloaded (`Sim/Population/PopulationStored.cs:9-13`; `PopulationSystem.cs:694`). The design reuses the `StoredSquad` record and adds the player path. | Fact found in the code. |
 | An unattended base produces nothing while no member is near | Production stops when no member of the faction is **online**, not when none is near. | Today a base keeps producing while its owner is elsewhere (`UnloadedProduction`, `Sim/Production/ProductionSystem.cs:55,1318`). Stopping it for an online player would change single-player behaviour. |
 | Camera decides the simulated area | Each player has one view anchor. Small servers leave it free, as today; big servers leash it to the player's characters. | A free camera on a public server lets one player make the server simulate, and reveal, any place. |
-| "About 40 settings", "about 110 commands", "player faction in 95 files" | 42 settings, 158 commands, `Player.Faction` at 309 places in 96 source files, `.IsPlayer` at 301 in 109. | Recounted at `a1ef2e06f`. |
+| "About 40 settings", "about 110 commands", "player faction in 95 files" | 43 gameplay settings (plus 2 for autosave), 158 commands, `Player.Faction` at 309 places in 96 source files, `.IsPlayer` at 301 in 109. | Recounted at `a1ef2e06f`. |
 | Players become factions in one refactor | Two stages. First "several players" (each squad has an owner; per-player state), which is enough for friends in one faction. Then "several player factions". | The first stage touches about 110 places; the second about 310 more and the relations table. Friends can play after the first. |
 
 ## The first milestone
@@ -94,8 +94,8 @@ trade, dialogue and inventory; shared and personal views; replication with inter
 Steam friend (Windows), and hosting from the game's menu; the server's rules, mod list check and save; offline players; then separate
 player factions with relations, joining a faction, raids and crimes per faction. A whole playthrough for 2 to 8 friends.
 
-**Checkpoint inside it:** after package 21 of [08](08-milestones.md) friends can play together **in one faction**. Separate factions are
-packages 22 to 27.
+**Checkpoint inside it:** after package 24 of [08](08-milestones.md) friends can play together **in one faction**. Separate factions are
+packages 25 to 29.
 
 **Not in:** more than one simulator process; players' machines simulating; encryption of traffic (password proof only); downloading
 non-Workshop mods from the server; a server browser; client-side prediction of movement; Linux and macOS joining through Steam (Kenshi
@@ -109,9 +109,9 @@ CPU or thread count), a 3 x 3 block loads 150-500 characters (same row), and on 
 
 | Players | Loaded characters (assumed) | Tick at rest | Server upload | Verdict |
 |---|---|---|---|---|
-| 2 | 300-1,000 | 3-6 ms | 0.2-0.5 Mbit/s | Fine on the host's own machine |
+| 2 | 300-1,000 | 3-6 ms | 0.03-0.26 Mbit/s | Fine on the host's own machine |
 | 8 | 1,000-4,000 | 6-20 ms | 0.8-2 Mbit/s | Fine; spikes while blocks load |
-| 32 | 3,000-10,000 | 15-47 ms | 3-8 Mbit/s | Needs the leash, the far cadence and load shedding; a real machine |
+| 32 | 3,200-9,600 | 16-45 ms | 3-8 Mbit/s | Needs the leash, the far cadence and load shedding; a real machine |
 | 200 | 8,000-60,000 | 38-270 ms | 20-50 Mbit/s | Not in one process unless players cluster; needs areas |
 
 ## Reading order

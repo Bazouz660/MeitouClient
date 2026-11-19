@@ -185,7 +185,7 @@ No client-side prediction of the world ([03](03-commands-and-authority.md#latenc
   client whose interest holds that zone. `Floater`'s "is the active squad's" flags are worked out on the client from the owner.
 - `World.Post(text)` gains an audience: `Post(audience, text)` with a player, a faction, or "everyone within earshot of a point".
   The 169 call sites each need the right audience; `Post(text)` stays as "player 0" until its site is visited, which is correct for
-  single-player throughout. This is its own work package.
+  single-player throughout. This is package 12 of [08](08-milestones.md).
 - The host's log taps (event log, action log, dialogue log) stay on the server.
 
 ## What must not change in single-player

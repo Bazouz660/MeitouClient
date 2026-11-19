@@ -55,7 +55,7 @@ One place, `CommandGate.Admit(world, command)`, called from `World.TakeDue` befo
 and its sender told why (a short code, shown as the existing notice line). Each command type declares what it needs; the declaration is
 a table in one file (`Sim/CommandRules.cs`), so a reviewer sees all 158 at once and a test can assert that no type is missing.
 
-| Class | Who may send | The gate checks | Types (count) |
+| Class | Who may send | The gate checks | Types (approximate count) |
 |---|---|---|---|
 | Orders to characters | any player | every subject id is a living character of a squad the sender owns; an empty list resolves to the sender's selection | `MoveOrder`, `FollowOrder`, `AttackOrder`, `TreatOrder`, ... (32) |
 | Selection, inspect | any player | `Select`: own characters only. `Inspect`, `ShowInventory`: target within the sender's interest ([04](04-replication.md#interest)); another faction's inventory only where the game allows looking (downed, looting, trading) | 5 |

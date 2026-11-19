@@ -158,7 +158,7 @@ existing convention ("so worlds without ... hash as before", `Sim/World.cs:1233-
 5. `SquadManagement.Mine` and the snapshot's squad lists filter by owner.
 After stage 1, friends play in one faction.
 
-**Stage 2: several player factions** (packages 22-27).
+**Stage 2: several player factions** (packages 25-29).
 6. Introduce `FactionTable`; route `PopulationData.Relations` and faction lookups through it; no runtime faction yet.
 7. Replace `world.Player.Faction` folder by folder, largest first (Locks, Ai, Dialogue, Construction, Population, Kidnap, Production,
    Crime, then the rest). Each site gets one of three helpers, chosen by reading the site:
