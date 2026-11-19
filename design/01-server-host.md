@@ -74,8 +74,8 @@ The inputs the host copies into the world lose their camera:
   effect units are positioned (`Data/Particles/`), so whether this can match what the renderer spawns. Until that is read, the first
   milestone keeps region weather (acid rain, wind, wetness) authoritative and treats local effect zones as an open item
   ([09](09-open-questions.md), Q12).
-- Seed: keep 1 for old saves' sake; a new server world may use the world seed. No behaviour depends on which, since the schedule is saved
-  (BIOMES records, docs/formats/save.md).
+- Seed: keep 1 for worlds that exist already. Weather after a load depends on it: a save stores only each region's current weather, and
+  the next ones are drawn from a random source reseeded from the seed (`Data/World/WeatherRegion.cs:85,375`).
 
 ### The client session
 
@@ -156,3 +156,14 @@ Rules that keep this safe:
 - Whether `WorldWeather.Update` on the render thread is synchronised with the tick thread's weather reads today.
 - Boot time and memory of a windowless start (docs give only the game's: menu at 17.5-18 s with 655 mods, docs/engine.md:50).
 - Whether `ModHost` runs with no `PlayerInterface` beyond what `mod-check` exercises (`tools/Meitou.Tools/ModCheck.cs:140`).
+
+## Corrections from the code check (19 November 2026)
+
+Every statement of fact in this file was checked against the code at `a1ef2e06f`. The rows below did not hold as written: where a row
+and the text above differ, the row is right. Line numbers are this file's. WRONG: the code does something else. OFF: the right
+thing at another place or with another number, or cited lines that do not say it. UNSUPPORTED: no code found that backs it.
+
+| Line | Statement | Verdict | What the code says | Corrected |
+|---|---|---|---|---|
+| 77-78 | "Seed: keep 1 ... a new server world may use the world seed. No behaviour depends on which, since the schedule is saved (BIOMES records)" | WRONG | The save holds each region's *current* weather only (`WeatherRegionSnapshot`, Data/World/WeatherRegion.cs:35-37: season, current weather entry, strength, wind, fog). The random source is "not part of it": `Restore` reseeds `_random = new Random(_seed + SeasonEndDay*31 + WeatherStartMinute)` (WeatherRegion.cs:32-33, 375) where `_seed` is derived from the world seed and region index (:85). So every future weather after a load depends on the seed. Regions a save lacks are replayed from day 0 with the seed (`WorldWeather.Restore`, WorldWeather.cs:149-161). | "Weather after a load depends on the seed: a save stores only each region's current weather, and the next ones are drawn from a random source reseeded from the weather seed (`WeatherRegion.cs:85,375`). Changing the seed changes the future weather of every existing save; keep 1 for old saves and for any save that lacks regions (`WorldWeather.cs:149-161`)." |
+| 110-111 | "`--server` branches in `Game/Host/Program.cs` before the splash, Steam and Vulkan (which today are already skipped for `--headless`, `Program.cs:78-80`)" | OFF | Program.cs:78 skips Steam and :80 the splash for `world.Headless`. Vulkan is not skipped: `--headless` draws offscreen and needs a GPU (docs/launch-options.md:133, and the design's own line 24). | "... before the splash and Steam (both already skipped for `--headless`, `Program.cs:78-80`) and before any Vulkan call (`--headless` still creates the GPU device)." |

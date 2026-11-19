@@ -51,7 +51,7 @@ public abstract record SimCommand
 
 ### The gate
 
-One place, `CommandGate.Admit(world, command)`, called from `World.TakeDue` before any system's `Inputs`. A refused command is removed
+One place, `CommandGate.Admit(world, command)`, called wherever commands are taken (`World.TakeDue`, and the paused path `ApplyPausedInterfaceCommands`, `Sim/World.Interface.cs:32`, which takes them from the queue itself), before any system's `Inputs`. A refused command is removed
 and its sender told why (a short code, shown as the existing notice line). Each command type declares what it needs; the declaration is
 a table in one file (`Sim/CommandRules.cs`), so a reviewer sees all 158 at once and a test can assert that no type is missing.
 
@@ -202,3 +202,19 @@ The dedicated server's console is the same command set (`pause`, `speed`, `step`
 - The bodies of the production handlers (`Sim/Production/ProductionSystem.cs:407-438`) for owner tests.
 - Whether every `HeldCommand` validates the grid it names.
 - Mod-defined command types: how many existing mods define their own `SimCommand` records.
+
+## Corrections from the code check (19 November 2026)
+
+Every statement of fact in this file was checked against the code at `a1ef2e06f`. The rows below did not hold as written: where a row
+and the text above differ, the row is right. Line numbers are this file's. WRONG: the code does something else. OFF: the right
+thing at another place or with another number, or cited lines that do not say it. UNSUPPORTED: no code found that backs it.
+
+| Line | Statement | Verdict | What the code says | Corrected |
+|---|---|---|---|---|
+| 54 | "One place, `CommandGate.Admit(world, command)`, called from `World.TakeDue` before any system's `Inputs`" | OFF (proposal the code makes incomplete) | While paused, `World.ApplyPausedInterfaceCommands` calls `Commands.TakeDue(Tick, filter)` directly (Sim/World.Interface.cs:32) and feeds the ~59 interface types to `Inputs` itself (:59-69). It never goes through `World.TakeDue` (World.cs:1035-1052, used only by `RunInputs` :845). The design's own pause path (line 172) relies on this path, and line 158-159 of 05 rules out "commands applied anywhere but through the gate". | "The gate sits in `CommandQueue.TakeDue`'s two callers: `World.TakeDue` (`World.cs:1037`) and `ApplyPausedInterfaceCommands` (`World.Interface.cs:32`), or inside `CommandQueue.TakeDue` itself." |
+| 176 | "New game: the world waits in `InCreation` (`PlayerState.cs:185`; `PopulationSystem.cs:400`)" | OFF | `InCreation` does not hold the world. It only stops Discover (PopulationSystem.cs:400) and the faction meetings (:503), and gates the editor's commands (CharacterEditing.cs:103,150). The pause comes from the UI: `CharacterEditorPanel` calls `UpdateMenuPause` (CharacterEditorPanel.cs:175,232), which sets `RequestedPause` (PlayerInterface.Ui.cs:1107). | "New game: `InCreation` (`PlayerState.cs:185`) only suppresses discovery (`PopulationSystem.cs:400,503`) and enables the editor's commands; the world waits because the editor panel requests a pause (`CharacterEditorPanel.cs:175,232`, `PlayerInterface.Ui.cs:1107`)." |
+| 63 | "`PassRange`, docs/simulation.md:1851" | OFF | `PassRange` is at docs/simulation.md:1849 (code: TradeSystem.cs:237). | "docs/simulation.md:1849". |
+| 174 | "Trade already stays open 'through fights and knock-outs' (docs/simulation.md:1855)" | OFF | The phrase is at docs/simulation.md:1851. | "docs/simulation.md:1851". |
+| 71 | "34 `Debug*`" | OFF | `DebugCommands.cs` has 35 concrete `Debug*` records (36 `record Debug*` with the abstract base). | "35 `Debug*`". |
+| 9 and 198 | "normally `Tick = Session.World.Tick` (268 such lines in Game)" | OFF | The literal text occurs 16 times. 268 lines in 42 Game files match `Tick = <expr>.Tick`, usually `Tick = player.Session.World.Tick`. | "`Tick = player.Session.World.Tick` and similar (268 lines in 42 Game files)". |
+| 26 | build mode pause "`BuildMode.cs:200,211`" | OFF (tiny) | Lines 198 and 211. | "`BuildMode.cs:198,211`". |

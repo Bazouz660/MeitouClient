@@ -312,3 +312,25 @@ The three lanes of stage A (host, commands and players, views) do not touch the 
 | Steam P2P fails between real accounts behind NAT | package 23 | Friends join by address; a UPnP step |
 | The faction table refactor is too invasive for upstream | package 25 review | Milestone 1 ends at the checkpoint; factions become milestone 2 |
 | Upstream does not take large refactors (CONTRIBUTING.md: "not accepting large features or new systems") | before package 1 | See [09](09-open-questions.md), Q1 |
+
+## Corrections from the code check (19 November 2026)
+
+Every statement of fact in this file was checked against the code at `a1ef2e06f`. The rows below did not hold as written: where a row
+and the text above differ, the row is right. Line numbers are this file's. WRONG: the code does something else. OFF: the right
+thing at another place or with another number, or cited lines that do not say it. UNSUPPORTED: no code found that backs it.
+
+| Line | Statement | Verdict | What the code says | Corrected |
+|---|---|---|---|---|
+| 254-255 | Package 26: "the 276 Simulation places, ... Locks 41, Ai 38, Dialogue 33, Construction 18, Population 18, Kidnap 17, Production 16, Saving 13, Crime 12" | OFF | The counts do not reproduce. `Player\.Faction\b` in `Sim/`: 213 in 80 files; with `PlayerFaction`/`PlayerFactionOf(` forms: 297 in 95 files. Per folder (second pattern): Locks 38, Ai 24 (Aggro 5 apart), Dialogue 26, Construction 19, Population 49, Kidnap 14, Production 16, Saving 30, Crime 10. The order and the sizes of the folders differ from the design (Population and Saving are much larger). | "About 300 places use the player faction in Simulation (`Player.Faction` 213, with `PlayerFaction` 297); by folder, largest first: Population 49, Locks 38, Saving 30, Dialogue 26, Ai 24, Construction 19, Production 16, Kidnap 14, Crime 10 (recount with a stated pattern before planning the pull requests)." |
+| 140-148, 33-34 (pkg 1) | Package 1 moves `Advance`/`AdvanceSimulation`/`SimulationTick` (:240-326) out of `WorldSession`, which "keeps camera, input" | OFF | `WorldSession.SimulationTick` (:314-326) sets `World.ViewPosition = ViewEye ?? Camera.Current.Eye` and `World.ShownInteriors` (:320-321) from the camera before `RunTick`; `AdvanceSimulation` also reads `Camera`-less state only after that. The moved tick therefore depends on the camera that stays behind; package 1 does not name it, and package 15 changes it later. | "`SimulationTick` takes the view eye and shown interiors from the camera (`WorldSession.cs:320-321`); package 1 passes them to the host as inputs." |
+| 51-52 | Package 3 replaces "the tool's hand copy (`tools/Meitou.Tools/ProbeWorld.cs:261`)" | OFF | `ProbeWorld.MakeWorld` (:261-271) builds a minimal `StandardSystemOptions` (SynchronousPaths, Dialogue, `Population = { Background = false }`, RagdollEnvironment) and takes every rule at its default; it does not copy the gameplay settings. Package 3 replaces it with `WorldRules.Default` rather than a copy. | "`ProbeWorld.cs:261` builds its own minimal options with default rules; it takes `WorldRules.Default`." |
+| 216, 215-217 | Package 21's Files include `Sim/Hosting/PlayerGate.cs` | UNSUPPORTED | `Sim/Hosting/` does not exist at a1ef2e06f (packages 1 and 5 create `WorldHost`, `HostClock`, `TickAhead`, `SaveService` there) and no package in 08 creates `PlayerGate` (01 calls it "new"). Package 21 lists it as an existing file to change. | "`Sim/Hosting/PlayerGate.cs` (new in package 7 or 14; name the package)." |
+| 121 | `Player.Money` (43 places) | OFF | `Player\.Money\b` in `Sim/`: 39 in 17 files. `Player.Selection` 36 (design 37) and `Player.Squad` 16 (design 16) hold. | "`Player.Money` (39)". |
+| 69 | `GameSaves.cs` has "63 writes to simulation state today" | UNSUPPORTED | Not reproducible: no pattern in the file defines a "write to simulation state" to count. | Drop the number or name the pattern used. |
+| 144-145, 149 | package 14: "roughly 60 shipping-code places", "268 tick stamps", "781 binding errors" | UNSUPPORTED | 60: see 04 (the table is incomplete). 268 and 781 come from tool runs not in the checkout. `World.Tick` in `Game/` recounts to 322 (`[wW]orld\.Tick\b`). | "at least 75 places; the tick-stamp and binding-error counts come from the inventory tool." |
+
+## As built
+
+| Package | Pull request | Differences from the plan |
+|---|---|---|
+| 1 | [#1061](https://github.com/VlcekM/MeitouClient/pull/1061) | `WorldHost`, `TickAhead` and `TickRunner` in `Sim/Hosting/`. No `HostClock`: the two clocks are existing types and the host holds them directly. `WorldSession` keeps its members and forwards them, so no caller changed. The session hands the host the eye and the shown interiors before the ticks (`GiveView`), which the plan did not mention. No test added (the proposed one waits for approval); `TickAheadTests` covers the moved code through the session. |

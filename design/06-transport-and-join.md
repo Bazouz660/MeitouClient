@@ -188,3 +188,15 @@ All in the server's configuration ([07](07-settings-mods-saves.md)) and changeab
 - Whether the Steam overlay draws over the Vulkan renderer (net.md: Unknown).
 - Whether the library exports any auth-ticket or lobby function (the export table was not re-read for this design).
 - LiteNetLib's current version and behaviour on .NET 11.
+
+## Corrections from the code check (19 November 2026)
+
+Every statement of fact in this file was checked against the code at `a1ef2e06f`. The rows below did not hold as written: where a row
+and the text above differ, the row is right. Line numbers are this file's. WRONG: the code does something else. OFF: the right
+thing at another place or with another number, or cited lines that do not say it. UNSUPPORTED: no code found that backs it.
+
+| Line | Statement | Verdict | What the code says | Corrected |
+|---|---|---|---|---|
+| 28-29 | Data loads once per process, so a different list needs a restart (`GameDatabase.cs:91`) | UNSUPPORTED | `Data/GameDatabase.cs:91` is the static factory `GameDatabase.Load(LoadOrder, edit)`; nothing there or in its docs says once per process. It is called from `Game/Mods/ModDataPhase.cs:40` (`LoadData`), `Game/Rendering/Frame/WorldFrame.cs:57`, `Game/Host/Program.cs:156` (`--data-check`), `Game/DevTools/WikiExport.cs:61`. The game makes one database at boot (WorldFrame/ModDataPhase), so a restart is how a list changes in practice, but no cited code enforces it. | "The game builds its `GameDatabase` once at boot (`ModDataPhase.LoadData`, `WorldFrame.cs:57`) and nothing reloads it while running, so another mod list means a restart." (verify the 'nothing reloads' by a search of callers before keeping it) |
+| 24-26 | The navmesh cache key uses write times and absolute paths | OFF | `Sim/Navigation/NavContentHash.cs:144-149` stamps file name + length + `LastWriteTimeUtc` (no path). Only collision files add the resolved path as text (`:111`, `Add(file)`) and mod folders' layer names (`:81`). Write times are right. | "...uses each file's name, size and write time, plus the resolved path of collision files (`NavContentHash.cs:111,144-149`), so it differs between machines." |
+| 127-130 | Missing Workshop mods: "Subscribe and download N mods" through the existing Workshop subscribe | OFF | The existing flow is launcher-only: the child process `WorkshopSubscribeChild`/`WorkshopSubscribeRunner` live in `launcher/Meitou.Launcher/` (docs/launcher.md:363-365, killed after 4 min, "Steam is not started", library from `SteamLibrary.Locate`). Reusable from the game: `Core/Steam/WorkshopSubscribe.Run(libraryPath, ids)` (`WorkshopSubscribe.cs:35`), by id, Windows and macOS. The game process has its own `SteamSession`. | "Core's `WorkshopSubscribe.Run(libraryPath, ids)` subscribes by id; today only the launcher calls it, in a child process (docs/launcher.md:349-378). The game would call it or start such a child." |

@@ -1,6 +1,6 @@
 # Design
 
-Multiplayer for MeitouClient, written 19 November 2026 against upstream `master` at `a1ef2e06f`. Start with the overview.
+Multiplayer for MeitouClient, written 19 November 2026 against upstream `master` at `a1ef2e06f`. Start with the overview. Its statements of fact were checked against the code the same day: 1 was wrong (fixed in place) and 53 were off or unsupported; each file ends with its rows that did not hold.
 `../BRIEF.md` holds the owner's decisions; `../research/` the input.
 
 | File | Covers |
